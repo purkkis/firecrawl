@@ -23,6 +23,7 @@ impl HtmlRenderer {
       .filter(|n| matches!(n.kind, NoteKind::Endnote))
       .collect();
 
+    let author = document.metadata.author.as_deref();
     let page: Markup = html! {
         (DOCTYPE)
         html lang="en" {
@@ -30,7 +31,9 @@ impl HtmlRenderer {
                 meta charset="UTF-8";
                 meta name="viewport" content="width=device-width, initial-scale=1.0";
                 title { (title) }
-                meta name="author" content=(document.metadata.author.as_deref().unwrap_or("Unknown"));
+                @if let Some(author) = author {
+                    meta name="author" content=(author);
+                }
             }
             body {
                 main { (self.render_blocks(&document.blocks)) }

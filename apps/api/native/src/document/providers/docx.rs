@@ -142,14 +142,20 @@ fn read_core_properties<R: Read + std::io::Seek>(
     .find(|n| is_tag(n, "title"))
     .and_then(|n| n.text())
   {
-    meta.title = Some(title.to_string());
+    let trimmed = title.trim();
+    if !trimmed.is_empty() {
+      meta.title = Some(trimmed.to_string());
+    }
   }
   if let Some(author) = xml
     .descendants()
     .find(|n| is_tag(n, "creator"))
     .and_then(|n| n.text())
   {
-    meta.author = Some(author.to_string());
+    let trimmed = author.trim();
+    if !trimmed.is_empty() && !trimmed.eq_ignore_ascii_case("unknown") {
+      meta.author = Some(trimmed.to_string());
+    }
   }
   if let Some(created) = xml
     .descendants()
@@ -284,14 +290,15 @@ fn parse_paragraph_with_listinfo(
   numbering: &NumberingInfo,
 ) -> Option<(Paragraph, Option<ListInfo>)> {
   let kind = paragraph_kind(node, styles, size_buckets);
+  let base_style = paragraph_run_style(node);
   let mut inlines = Vec::new();
 
   for child in node.children().filter(|n| n.is_element()) {
     if is_tag(&child, "r") {
-      let run_inlines = parse_run(&child, rels);
+      let run_inlines = parse_run(&child, rels, &base_style);
       inlines.extend(run_inlines);
     } else if is_tag(&child, "hyperlink") {
-      if let Some(link) = parse_hyperlink(&child, rels) {
+      if let Some(link) = parse_hyperlink(&child, rels, &base_style) {
         inlines.push(link);
       }
     } else if is_tag(&child, "bookmarkStart") {
@@ -459,22 +466,128 @@ fn compute_style_size_buckets_for_doc(
     .collect()
 }
 
-fn parse_run(run: &Node, _rels: &Relationships) -> Vec<Inline> {
-  let rpr = child(run, "rPr");
-  let is_bold = rpr.as_ref().and_then(|n| child(n, "b")).is_some();
-  let is_italic = rpr.as_ref().and_then(|n| child(n, "i")).is_some();
-  let is_strike = rpr.as_ref().and_then(|n| child(n, "strike")).is_some();
-  let is_code_style = rpr
-    .as_ref()
-    .and_then(|n| child(n, "rStyle"))
-    .and_then(|n| get_attr_local(&n, "val"))
-    .map(|s| s.to_ascii_lowercase().contains("code"))
-    .unwrap_or(false);
-  let vert_align = rpr
-    .as_ref()
-    .and_then(|n| child(n, "vertAlign"))
-    .and_then(|n| get_attr_local(&n, "val"))
-    .map(|s| s.to_ascii_lowercase());
+#[derive(Clone, Default)]
+struct RunStyle {
+  bold: Option<bool>,
+  italic: Option<bool>,
+  strike: Option<bool>,
+  code: Option<bool>,
+  vert_align: Option<VerticalAlign>,
+}
+
+#[derive(Clone, Copy)]
+enum VerticalAlign {
+  Baseline,
+  Superscript,
+  Subscript,
+}
+
+#[derive(Clone, Copy)]
+struct ResolvedRunStyle {
+  bold: bool,
+  italic: bool,
+  strike: bool,
+  code: bool,
+  vert_align: VerticalAlign,
+}
+
+impl RunStyle {
+  fn merged(&self, overrides: &RunStyle) -> RunStyle {
+    RunStyle {
+      bold: overrides.bold.or(self.bold),
+      italic: overrides.italic.or(self.italic),
+      strike: overrides.strike.or(self.strike),
+      code: overrides.code.or(self.code),
+      vert_align: overrides.vert_align.or(self.vert_align),
+    }
+  }
+
+  fn resolve_with(&self, local: &RunStyle) -> ResolvedRunStyle {
+    ResolvedRunStyle {
+      bold: local.bold.or(self.bold).unwrap_or(false),
+      italic: local.italic.or(self.italic).unwrap_or(false),
+      strike: local.strike.or(self.strike).unwrap_or(false),
+      code: local.code.or(self.code).unwrap_or(false),
+      vert_align: local
+        .vert_align
+        .or(self.vert_align)
+        .unwrap_or(VerticalAlign::Baseline),
+    }
+  }
+}
+
+impl ResolvedRunStyle {
+  fn apply(self, mut inlines: Vec<Inline>) -> Vec<Inline> {
+    if self.strike {
+      inlines = vec![Inline::Del(inlines)];
+    }
+    if self.italic {
+      inlines = vec![Inline::Em(inlines)];
+    }
+    if self.bold {
+      inlines = vec![Inline::Strong(inlines)];
+    }
+    match self.vert_align {
+      VerticalAlign::Superscript => vec![Inline::Sup(inlines)],
+      VerticalAlign::Subscript => vec![Inline::Sub(inlines)],
+      VerticalAlign::Baseline => inlines,
+    }
+  }
+}
+
+fn read_on_off(node: &Node) -> Option<bool> {
+  let value = get_attr_local(node, "val").map(|v| v.to_ascii_lowercase());
+  match value.as_deref() {
+    None => Some(true),
+    Some("0") | Some("false") | Some("off") => Some(false),
+    Some(_) => Some(true),
+  }
+}
+
+fn run_style_from_rpr(rpr: &Node) -> RunStyle {
+  let mut style = RunStyle::default();
+
+  if let Some(b) = child(rpr, "b").and_then(|n| read_on_off(&n)) {
+    style.bold = Some(b);
+  }
+  if let Some(i) = child(rpr, "i").and_then(|n| read_on_off(&n)) {
+    style.italic = Some(i);
+  }
+  if let Some(s) = child(rpr, "strike").and_then(|n| read_on_off(&n)) {
+    style.strike = Some(s);
+  }
+  if let Some(rstyle) = child(rpr, "rStyle").and_then(|n| get_attr_local(&n, "val")) {
+    if rstyle.to_ascii_lowercase().contains("code") {
+      style.code = Some(true);
+    }
+  }
+  if let Some(va) = child(rpr, "vertAlign").and_then(|n| get_attr_local(&n, "val")) {
+    let lower = va.to_ascii_lowercase();
+    let val = if lower == "sup" || lower == "superscript" {
+      VerticalAlign::Superscript
+    } else if lower == "sub" || lower == "subscript" {
+      VerticalAlign::Subscript
+    } else {
+      VerticalAlign::Baseline
+    };
+    style.vert_align = Some(val);
+  }
+
+  style
+}
+
+fn paragraph_run_style(p: &Node) -> RunStyle {
+  child(p, "pPr")
+    .and_then(|ppr| child(&ppr, "rPr"))
+    .map(|rpr| run_style_from_rpr(&rpr))
+    .unwrap_or_default()
+}
+
+fn parse_run(run: &Node, _rels: &Relationships, base_style: &RunStyle) -> Vec<Inline> {
+  let local_style = child(run, "rPr")
+    .map(|rpr| run_style_from_rpr(&rpr))
+    .unwrap_or_default();
+  let resolved = base_style.resolve_with(&local_style);
 
   let mut out = Vec::new();
 
@@ -502,7 +615,7 @@ fn parse_run(run: &Node, _rels: &Relationships) -> Vec<Inline> {
     }
   }
 
-  if is_code_style {
+  if resolved.code {
     let code_text: String = out
       .iter()
       .filter_map(|i| match i {
@@ -515,38 +628,25 @@ fn parse_run(run: &Node, _rels: &Relationships) -> Vec<Inline> {
     }
   }
 
-  let mut wrapped = out;
-  if is_strike {
-    wrapped = vec![Inline::Del(wrapped)];
-  }
-  if is_italic {
-    wrapped = vec![Inline::Em(wrapped)];
-  }
-  if is_bold {
-    wrapped = vec![Inline::Strong(wrapped)];
-  }
-  if let Some(va) = vert_align {
-    if va == "superscript" || va == "sup" {
-      wrapped = vec![Inline::Sup(wrapped)];
-    } else if va == "subscript" || va == "sub" {
-      wrapped = vec![Inline::Sub(wrapped)];
-    }
-  }
-
-  wrapped
+  resolved.apply(out)
 }
 
-fn parse_hyperlink(node: &Node, rels: &Relationships) -> Option<Inline> {
+fn parse_hyperlink(node: &Node, rels: &Relationships, base_style: &RunStyle) -> Option<Inline> {
   let href = if let Some(id) = get_attr_local(node, "id") {
     rels.get(id).map(|s| s.to_string())
   } else {
     get_attr_local(node, "anchor").map(|anchor| format!("#{anchor}"))
   }?;
 
+  let link_style = child(node, "rPr")
+    .map(|rpr| run_style_from_rpr(&rpr))
+    .unwrap_or_default();
+  let combined_style = base_style.merged(&link_style);
+
   let mut children = Vec::new();
   for child in node.children().filter(|n| n.is_element()) {
     if is_tag(&child, "r") {
-      children.extend(parse_run(&child, rels));
+      children.extend(parse_run(&child, rels, &combined_style));
     }
   }
 

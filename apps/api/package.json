@@ -164,5 +164,5 @@
     "*.{js,jsx,ts,tsx,json,css,md}": "prettier --write",
     "*.{js,tsx,ts,tsx}": "ts-prune --skip \"native/\" --error"
   },
-  "packageManager": "pnpm@10.15.1"
+  "packageManager": "pnpm@10.16.1"
 }

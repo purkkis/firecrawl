@@ -2,6 +2,7 @@ use crate::document::document::*;
 use crate::document::providers::DocumentProvider;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use std::error::Error;
+use std::num::NonZeroU32;
 
 pub struct RtfProvider;
 
@@ -37,7 +38,7 @@ fn extract_metadata_from_info(src: &[u8]) -> Option<DocumentMetadata> {
   let mut meta = DocumentMetadata::default();
 
   if let Some(author) = extract_simple_text_dest(info, br"{\author") {
-    if !author.trim().is_empty() {
+    if !author.eq_ignore_ascii_case("unknown") {
       meta.author = Some(author);
     }
   }
@@ -126,6 +127,87 @@ fn extract_creatim(buf: &[u8]) -> Option<DateTime<Utc>> {
   Some(DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc))
 }
 
+#[derive(Default)]
+struct TableBuilder {
+  rows: Vec<TableRow>,
+  current_row: Vec<TableCell>,
+  current_cell_blocks: Vec<Block>,
+}
+
+impl TableBuilder {
+  fn start_row(&mut self) {
+    self.current_cell_blocks.clear();
+    self.current_row.clear();
+  }
+
+  fn push_block(&mut self, block: Block) {
+    self.current_cell_blocks.push(block);
+  }
+
+  fn finish_cell(&mut self) {
+    if self.current_cell_blocks.is_empty() {
+      return;
+    }
+    let cell = TableCell {
+      blocks: std::mem::take(&mut self.current_cell_blocks),
+      colspan: NonZeroU32::new(1).unwrap(),
+      rowspan: NonZeroU32::new(1).unwrap(),
+    };
+    self.current_row.push(cell);
+  }
+
+  fn finish_row(&mut self) {
+    self.finish_cell();
+    if self.current_row.is_empty() {
+      return;
+    }
+    let row = TableRow {
+      cells: std::mem::take(&mut self.current_row),
+      kind: TableRowKind::Body,
+    };
+    self.rows.push(row);
+  }
+
+  fn finalize(mut self) -> Option<Block> {
+    self.finish_row();
+    if self.rows.is_empty() {
+      None
+    } else {
+      Some(Block::Table(Table { rows: self.rows }))
+    }
+  }
+}
+
+fn push_block_target(
+  block: Block,
+  blocks: &mut Vec<Block>,
+  table: &mut Option<TableBuilder>,
+  in_table_cell: bool,
+) {
+  if in_table_cell {
+    if let Some(builder) = table.as_mut() {
+      builder.push_block(block);
+    } else {
+      blocks.push(block);
+    }
+  } else {
+    if let Some(builder) = table.take() {
+      if let Some(table_block) = builder.finalize() {
+        blocks.push(table_block);
+      }
+    }
+    blocks.push(block);
+  }
+}
+
+fn flush_table(blocks: &mut Vec<Block>, table: &mut Option<TableBuilder>) {
+  if let Some(builder) = table.take() {
+    if let Some(block) = builder.finalize() {
+      blocks.push(block);
+    }
+  }
+}
+
 fn parse_rtf_body_to_blocks(src: &[u8]) -> Vec<Block> {
   let mut p = 0usize;
   let n = src.len();
@@ -151,6 +233,8 @@ fn parse_rtf_body_to_blocks(src: &[u8]) -> Vec<Block> {
   let mut blocks: Vec<Block> = Vec::new();
   let mut cur_inlines: Vec<Inline> = Vec::new();
   let mut text_buf = String::new();
+  let mut table_builder: Option<TableBuilder> = None;
+  let mut in_table_cell = false;
   let mut uc_skip: usize = 1;
   let mut pending_uc_skip: usize = 0;
 
@@ -227,16 +311,22 @@ fn parse_rtf_body_to_blocks(src: &[u8]) -> Vec<Block> {
     cur: &mut Vec<Inline>,
     text_buf: &mut String,
     blocks: &mut Vec<Block>,
+    table: &mut Option<TableBuilder>,
     st: &State,
+    in_table_cell: bool,
   ) {
     push_text_buf(text_buf, cur, st);
     if has_visible_content(cur) {
-      blocks.push(Block::Paragraph(Paragraph {
+      let block = Block::Paragraph(Paragraph {
         kind: ParagraphKind::Normal,
         inlines: std::mem::take(cur),
-      }));
+      });
+      push_block_target(block, blocks, table, in_table_cell);
     } else {
       cur.clear();
+      if !in_table_cell {
+        flush_table(blocks, table);
+      }
     }
   }
 
@@ -396,6 +486,35 @@ fn parse_rtf_body_to_blocks(src: &[u8]) -> Vec<Block> {
 
           if !skipping {
             match word.as_str() {
+              "trowd" => {
+                let builder = table_builder.get_or_insert_with(TableBuilder::default);
+                builder.start_row();
+                in_table_cell = false;
+              }
+              "intbl" => {
+                in_table_cell = true;
+              }
+              "cell" => {
+                flush_paragraph(
+                  &mut cur_inlines,
+                  &mut text_buf,
+                  &mut blocks,
+                  &mut table_builder,
+                  &state,
+                  true,
+                );
+                if let Some(builder) = table_builder.as_mut() {
+                  builder.finish_cell();
+                }
+                in_table_cell = false;
+              }
+              "row" => {
+                if let Some(builder) = table_builder.as_mut() {
+                  builder.finish_row();
+                }
+                in_table_cell = false;
+              }
+              "cellx" | "clvertalb" | "clvertalc" | "clvertalt" => {}
               "b" => {
                 flush_before_change(&mut text_buf, &mut cur_inlines, &state);
                 state.bold = val.map(|v| v != 0).unwrap_or(true);
@@ -432,7 +551,14 @@ fn parse_rtf_body_to_blocks(src: &[u8]) -> Vec<Block> {
                 state = State::default();
               }
               "par" => {
-                flush_paragraph(&mut cur_inlines, &mut text_buf, &mut blocks, &state);
+                flush_paragraph(
+                  &mut cur_inlines,
+                  &mut text_buf,
+                  &mut blocks,
+                  &mut table_builder,
+                  &state,
+                  in_table_cell,
+                );
               }
               "uc" => {
                 uc_skip = val.unwrap_or(1).max(0) as usize;
@@ -451,7 +577,14 @@ fn parse_rtf_body_to_blocks(src: &[u8]) -> Vec<Block> {
               _ => {}
             }
           } else if word == "par" {
-            flush_paragraph(&mut cur_inlines, &mut text_buf, &mut blocks, &state);
+            flush_paragraph(
+              &mut cur_inlines,
+              &mut text_buf,
+              &mut blocks,
+              &mut table_builder,
+              &state,
+              in_table_cell,
+            );
           }
 
           let mut final_p = new_p;
@@ -488,8 +621,17 @@ fn parse_rtf_body_to_blocks(src: &[u8]) -> Vec<Block> {
   }
 
   if !text_buf.is_empty() || !cur_inlines.is_empty() {
-    flush_paragraph(&mut cur_inlines, &mut text_buf, &mut blocks, &state);
+    flush_paragraph(
+      &mut cur_inlines,
+      &mut text_buf,
+      &mut blocks,
+      &mut table_builder,
+      &state,
+      in_table_cell,
+    );
   }
+
+  flush_table(&mut blocks, &mut table_builder);
 
   blocks
 }

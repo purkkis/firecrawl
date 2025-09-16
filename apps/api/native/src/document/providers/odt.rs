@@ -228,8 +228,9 @@ fn read_meta<R: Read + Seek>(zip: &mut ZipArchive<R>) -> Option<DocumentMetadata
         .and_then(|n| n.text())
     })
   {
-    if !author.trim().is_empty() {
-      meta.author = Some(author.to_string());
+    let trimmed = author.trim();
+    if !trimmed.is_empty() && !trimmed.eq_ignore_ascii_case("unknown") {
+      meta.author = Some(trimmed.to_string());
     }
   }
 
