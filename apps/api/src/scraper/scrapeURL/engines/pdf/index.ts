@@ -1,3 +1,28 @@
+/**
+ * PDF Parser Engine with Intelligent Racing and Fallback
+ *
+ * ## Processing Strategies (in order):
+ *
+ * 1. **Racing Mode**: When both RunPod MU and Reducto are available (PDFs < 19MB)
+ *    - Starts with RunPod MU
+ *    - After 120 seconds, starts Reducto in parallel
+ *    - Uses whichever finishes first
+ *    - Optimal for all PDFs to minimize processing time
+ *
+ * 2. **RunPod MU Solo**: When only RunPod is available
+ *    - For PDFs under 19MB
+ *    - Cached results for better performance
+ *
+ * 3. **Reducto Fallback**: When RunPod fails or isn't available
+ *    - Also for PDFs under 19MB (for now)
+ *    - Uses Reducto as a backup option
+ *
+ * 4. **pdf-parse**: Final fallback for basic text extraction
+ *    - Simple text extraction without formatting
+ *    - Always available as last resort
+ *    - Works for PDFs of any size
+ */
+
 import { Meta } from "../..";
 import { EngineScrapeResult } from "..";
 import * as marked from "marked";
@@ -32,6 +57,7 @@ type PDFProcessorResult = { html: string; markdown?: string };
 
 const MAX_FILE_SIZE = 19 * 1024 * 1024; // 19MB
 const MILLISECONDS_PER_PAGE = 150;
+const RUNPOD_TIMEOUT_BEFORE_REDUCTO = 120 * 1000; // 120 seconds - start Reducto if RunPod takes this long
 
 async function scrapePDFWithRunPodMU(
   meta: Meta,
@@ -159,6 +185,218 @@ async function scrapePDFWithRunPodMU(
   return processorResult;
 }
 
+async function scrapePDFWithReducto(
+  meta: Meta,
+  tempFilePath: string,
+  base64Content: string,
+  maxPages?: number,
+): Promise<PDFProcessorResult> {
+  meta.logger.debug("Processing PDF document with Reducto", {
+    tempFilePath,
+  });
+
+  if (!process.env.REDUCTO_API_KEY) {
+    throw new Error("Reducto API key not configured");
+  }
+
+  meta.abort.throwIfAborted();
+
+  // Start async parse job
+  const parseStart = await robustFetch({
+    url: "https://platform.reducto.ai/parse_async",
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.REDUCTO_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: {
+      document_url: `data:application/pdf;base64,${base64Content}`,
+      advanced_options: {
+        ...(maxPages !== undefined && { page_range: [1, maxPages] }),
+      },
+    },
+    logger: meta.logger.child({
+      method: "scrapePDFWithReducto/parse_async/robustFetch",
+    }),
+    schema: z.object({
+      job_id: z.string(),
+    }),
+    mock: meta.mock,
+    abort: meta.abort.asSignal(),
+  });
+
+  const jobId = parseStart.job_id;
+  meta.logger.info("Reducto parse job started", { jobId });
+
+  // Poll for job completion
+  let attempt = 0;
+  const maxAttempts = Math.ceil((meta.abort.scrapeTimeout() ?? 150000) / 3000);
+
+  while (attempt < maxAttempts) {
+    meta.abort.throwIfAborted();
+    await new Promise(resolve => setTimeout(resolve, 3000)); // Poll every 3 seconds
+    meta.abort.throwIfAborted();
+
+    const jobStatus = await robustFetch({
+      url: `https://platform.reducto.ai/job/${jobId}`,
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${process.env.REDUCTO_API_KEY}`,
+      },
+      logger: meta.logger.child({
+        method: "scrapePDFWithReducto/job_status/robustFetch",
+      }),
+      schema: z.object({
+        status: z.enum(["Pending", "Complete", "Failed"]),
+        result: z
+          .object({
+            type: z.enum(["full", "url"]).optional(),
+            chunks: z
+              .array(
+                z.object({
+                  content: z.string(),
+                  embed: z.string().optional(),
+                }),
+              )
+              .optional(),
+            url: z.string().optional(),
+          })
+          .optional(),
+      }),
+      mock: meta.mock,
+      abort: meta.abort.asSignal(),
+    });
+
+    if (jobStatus.status === "Complete") {
+      let markdown = "";
+
+      if (jobStatus.result?.type === "full" && jobStatus.result.chunks) {
+        // Content is inline
+        markdown = jobStatus.result.chunks
+          .map(chunk => chunk.content)
+          .join("\n\n");
+      } else if (jobStatus.result?.type === "url" && jobStatus.result.url) {
+        // Content is at URL
+        const contentResponse = await robustFetch({
+          url: jobStatus.result.url,
+          method: "GET",
+          logger: meta.logger.child({
+            method: "scrapePDFWithReducto/content_fetch/robustFetch",
+          }),
+          schema: z.object({
+            chunks: z.array(
+              z.object({
+                content: z.string(),
+              }),
+            ),
+          }),
+          mock: meta.mock,
+          abort: meta.abort.asSignal(),
+        });
+        markdown = contentResponse.chunks
+          .map(chunk => chunk.content)
+          .join("\n\n");
+      }
+
+      return {
+        markdown,
+        html: await marked.parse(markdown, { async: true }),
+      };
+    } else if (jobStatus.status === "Failed") {
+      throw new Error("Reducto failed to parse PDF");
+    }
+
+    attempt++;
+  }
+
+  throw new Error("Reducto parse job timed out");
+}
+
+/**
+ * Races RunPod MU and Reducto parsers for optimal performance
+ * If RunPod takes longer than 120 seconds, starts Reducto in parallel
+ * Returns the first successful result
+ */
+async function scrapePDFWithRacing(
+  meta: Meta,
+  tempFilePath: string,
+  base64Content: string,
+  maxPages?: number,
+): Promise<PDFProcessorResult> {
+  meta.logger.info("Starting PDF processing with RunPod MU", { tempFilePath });
+
+  const runPodPromise = scrapePDFWithRunPodMU(
+    {
+      ...meta,
+      logger: meta.logger.child({ method: "scrapePDFWithRacing/runpod" }),
+    },
+    tempFilePath,
+    base64Content,
+    maxPages,
+  );
+
+  // Set up a delayed start for Reducto
+  let reductoPromise: Promise<PDFProcessorResult> | null = null;
+  let reductoStarted = false;
+
+  const timeoutPromise = new Promise<void>(resolve => {
+    setTimeout(() => {
+      if (!reductoStarted && process.env.REDUCTO_API_KEY) {
+        meta.logger.info(
+          "RunPod MU taking > 120 seconds, starting Reducto in parallel",
+        );
+        reductoStarted = true;
+        reductoPromise = scrapePDFWithReducto(
+          {
+            ...meta,
+            logger: meta.logger.child({
+              method: "scrapePDFWithRacing/reducto",
+            }),
+          },
+          tempFilePath,
+          base64Content,
+          maxPages,
+        ).catch(error => {
+          meta.logger.warn("Reducto failed during race", { error });
+          throw error;
+        });
+      }
+      resolve();
+    }, RUNPOD_TIMEOUT_BEFORE_REDUCTO);
+  });
+
+  try {
+    // First, try to get RunPod result within the timeout period
+    const result = (await Promise.race([
+      runPodPromise,
+      timeoutPromise.then(() => {
+        // If we get here, RunPod hasn't finished yet
+        if (reductoPromise) {
+          // Race RunPod and Reducto
+          return Promise.race([
+            runPodPromise.catch(error => {
+              meta.logger.warn("RunPod MU failed during race", { error });
+              throw error;
+            }),
+            reductoPromise,
+          ]);
+        }
+        // If no Reducto available, just wait for RunPod
+        return runPodPromise;
+      }),
+    ])) as PDFProcessorResult;
+
+    meta.logger.info("PDF processing completed successfully", {
+      parser: reductoStarted ? "race_winner" : "runpod",
+    });
+
+    return result;
+  } catch (error) {
+    // If both fail, throw the error
+    throw error;
+  }
+}
+
 async function scrapePDFWithParsePDF(
   meta: Meta,
   tempFilePath: string,
@@ -270,18 +508,29 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
 
   const base64Content = (await readFile(tempFilePath)).toString("base64");
 
-  // First try RunPod MU if conditions are met
-  if (
+  // Calculate estimated processing time
+  const estimatedProcessingTime = effectivePageCount * MILLISECONDS_PER_PAGE;
+  // const shouldPreferReducto = estimatedProcessingTime > REDUCTO_TIMEOUT_THRESHOLD &&
+  //                            process.env.REDUCTO_API_KEY;
+
+  const hasRunPod =
     base64Content.length < MAX_FILE_SIZE &&
     process.env.RUNPOD_MU_API_KEY &&
-    process.env.RUNPOD_MU_POD_ID
-  ) {
+    process.env.RUNPOD_MU_POD_ID;
+  const hasReducto =
+    base64Content.length < MAX_FILE_SIZE && process.env.REDUCTO_API_KEY;
+
+  // If both RunPod and Reducto are available and not already used, race them
+  if (!result && hasRunPod && hasReducto) {
+    meta.logger.info(
+      "Racing RunPod MU and Reducto (with 120-second delay for Reducto)",
+    );
     try {
-      result = await scrapePDFWithRunPodMU(
+      result = await scrapePDFWithRacing(
         {
           ...meta,
           logger: meta.logger.child({
-            method: "scrapePDF/scrapePDFWithRunPodMU",
+            method: "scrapePDF/scrapePDFWithRacing",
           }),
         },
         tempFilePath,
@@ -295,21 +544,81 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       ) {
         throw error;
       }
+      meta.logger.warn("Racing parsers failed -- falling back to next parser", {
+        error,
+      });
+      Sentry.captureException(error);
+    }
+  }
+
+  // Try RunPod alone (if racing wasn't used)
+  if (!result && hasRunPod && !hasReducto) {
+    try {
+      result = await scrapePDFWithRunPodMU(
+        {
+          ...meta,
+          logger: meta.logger.child({
+            method: "scrapePDF/scrapePDFWithRunPodMU",
+          }),
+        },
+        tempFilePath,
+        base64Content,
+        maxPages,
+      );
+      meta.logger.info("Successfully processed PDF with RunPod MU (solo)");
+    } catch (error) {
+      if (
+        error instanceof RemoveFeatureError ||
+        error instanceof AbortManagerThrownError
+      ) {
+        throw error;
+      }
       meta.logger.warn(
-        "RunPod MU failed to parse PDF (could be due to timeout) -- falling back to parse-pdf",
+        "RunPod MU failed to parse PDF -- falling back to next parser",
         { error },
       );
       Sentry.captureException(error);
     }
   }
 
-  // If RunPod MU failed or wasn't attempted, use PdfParse
+  // Try Reducto alone as fallback (if not already used)
+  if (!result && hasReducto) {
+    meta.logger.info("Trying Reducto as fallback parser");
+    try {
+      result = await scrapePDFWithReducto(
+        {
+          ...meta,
+          logger: meta.logger.child({
+            method: "scrapePDF/scrapePDFWithReducto-fallback",
+          }),
+        },
+        tempFilePath,
+        base64Content,
+        maxPages,
+      );
+      meta.logger.info("Successfully processed PDF with Reducto (fallback)");
+    } catch (error) {
+      if (
+        error instanceof RemoveFeatureError ||
+        error instanceof AbortManagerThrownError
+      ) {
+        throw error;
+      }
+      meta.logger.warn("Reducto fallback failed -- falling back to parse-pdf", {
+        error,
+      });
+      Sentry.captureException(error);
+    }
+  }
+
+  // Final fallback to PdfParse
   if (!result) {
+    meta.logger.info("Using pdf-parse as final fallback");
     result = await scrapePDFWithParsePDF(
       {
         ...meta,
         logger: meta.logger.child({
-          method: "scrapePDF/scrapePDFWithParsePDF",
+          method: "scrapePDF/scrapePDFWithParsePDF-fallback",
         }),
       },
       tempFilePath,
