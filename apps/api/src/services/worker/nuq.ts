@@ -34,6 +34,8 @@ export type NuQJob<Data = any, ReturnValue = any> = {
   returnvalue?: ReturnValue;
   failedReason?: string;
   lock?: string;
+  ownerId?: string;
+  groupId?: string;
 };
 
 type NuQJobOptions = {
@@ -343,6 +345,18 @@ class NuQ<JobData = any, JobReturnValue = any> {
     "returnvalue",
     "failedreason",
     "lock",
+    "owner_id",
+    "group_id",
+  ];
+
+  private readonly jobBacklogReturning = [
+    "id",
+    "created_at",
+    "priority",
+    "data",
+    "listen_channel_id",
+    "owner_id",
+    "group_id",
   ];
 
   private rowToJob(
@@ -361,6 +375,8 @@ class NuQ<JobData = any, JobReturnValue = any> {
       returnvalue: row.returnvalue ?? undefined,
       failedReason: row.failedreason ?? undefined,
       lock: row.lock ?? undefined,
+      ownerId: row.owner_id ?? undefined,
+      groupId: row.group_id ?? undefined,
     };
   }
 
@@ -551,7 +567,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
         const result = this.rowToJob(
           (
             await nuqPool.query(
-              `INSERT INTO ${this.queueName}${options.backlogged ? "_backlog" : ""} (id, data, priority, listen_channel_id, owner_id, group_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING ${this.jobReturning.join(", ")};`,
+              `INSERT INTO ${this.queueName}${options.backlogged ? "_backlog" : ""} (id, data, priority, listen_channel_id, owner_id, group_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING ${(options.backlogged ? this.jobBacklogReturning : this.jobReturning).join(", ")};`,
               [
                 id,
                 data,
@@ -659,7 +675,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
               );
             }
 
-            const query = `INSERT INTO ${this.queueName}${tableSuffix} (id, data, priority, listen_channel_id, owner_id, group_id) VALUES ${valuesPlaceholders.join(", ")} RETURNING ${this.jobReturning.join(", ")};`;
+            const query = `INSERT INTO ${this.queueName}${tableSuffix} (id, data, priority, listen_channel_id, owner_id, group_id) VALUES ${valuesPlaceholders.join(", ")} RETURNING ${(tableSuffix === "_backlog" ? this.jobBacklogReturning : this.jobReturning).join(", ")};`;
 
             const result = await nuqPool.query(query, params);
 
