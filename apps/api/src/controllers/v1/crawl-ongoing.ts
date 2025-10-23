@@ -13,7 +13,9 @@ export async function ongoingCrawlsController(
   req: RequestWithAuth<{}, undefined, OngoingCrawlsResponse>,
   res: Response<OngoingCrawlsResponse>,
 ) {
-  const ids = (await crawlGroup.getByOwner(req.auth.team_id)).map(x => x.id);
+  const ids = (await crawlGroup.getOngoingByOwner(req.auth.team_id)).map(
+    x => x.id,
+  );
 
   const crawls = (
     await Promise.all(ids.map(async id => ({ ...(await getCrawl(id)), id })))

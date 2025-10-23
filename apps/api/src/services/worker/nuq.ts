@@ -1402,7 +1402,7 @@ class NuQJobGroup {
     });
   }
 
-  public async getByOwner(
+  public async getOngoingByOwner(
     ownerId: string,
     _logger: Logger = logger,
   ): Promise<NuQJobGroupInstance[]> {
@@ -1416,7 +1416,7 @@ class NuQJobGroup {
       try {
         const result = (
           await nuqPool.query(
-            `SELECT ${this.groupReturning.join(", ")} FROM ${this.groupName} WHERE ${this.groupName}.owner_id = $1;`,
+            `SELECT ${this.groupReturning.join(", ")} FROM ${this.groupName} WHERE ${this.groupName}.owner_id = $1 AND ${this.groupName}.status = 'active'`,
             [normalizeOwnerId(ownerId)],
           )
         ).rows.map(x => this.rowToGroup(x)!);
