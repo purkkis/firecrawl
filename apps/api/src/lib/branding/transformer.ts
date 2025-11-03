@@ -44,24 +44,11 @@ export async function brandingTransformer(
       color_confidence: llmEnhancement.colorRoles.confidence,
     });
 
-    const brandingProfile = mergeBrandingResults(
+    brandingProfile = mergeBrandingResults(
       jsBranding,
       llmEnhancement,
       buttonSnapshots,
     );
-
-    const DEBUG = process.env.DEBUG_BRANDING === "true";
-
-    if (DEBUG) {
-      (brandingProfile as any).__button_snapshots = buttonSnapshots;
-    }
-
-    delete (brandingProfile as any).__framework_hints;
-    delete (brandingProfile as any).confidence;
-
-    if (!DEBUG) {
-      delete (brandingProfile as any).__llm_button_reasoning;
-    }
   } catch (error) {
     meta.logger.error(
       "LLM branding enhancement failed, using JS analysis only",

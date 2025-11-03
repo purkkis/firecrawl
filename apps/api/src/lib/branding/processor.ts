@@ -1,81 +1,18 @@
 import { BrandingProfile } from "../../types/branding";
 import { BrandingScriptReturn } from "./types";
+import { formatHex } from "culori";
 
 function hexify(rgba: string): string | null {
   if (!rgba) return null;
 
-  if (/^#([0-9a-f]{3,8})$/i.test(rgba)) {
-    if (rgba.length === 4) {
-      return (
-        "#" +
-        [...rgba.slice(1)]
-          .map(ch => ch + ch)
-          .join("")
-          .toUpperCase()
-      );
-    }
-    if (rgba.length === 7) return rgba.toUpperCase();
-    if (rgba.length === 9) return rgba.slice(0, 7).toUpperCase();
-    return rgba.toUpperCase();
+  // Use culori's formatHex which accepts strings and handles all color formats
+  // According to culori docs: formatHex accepts "color or string"
+  try {
+    const hex = formatHex(rgba);
+    return hex ? hex.toUpperCase() : null;
+  } catch (e) {
+    return null;
   }
-
-  const colorMatch = rgba.match(
-    /color\((?:display-p3|srgb)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\)/i,
-  );
-  if (colorMatch) {
-    let [r, g, b] = colorMatch
-      .slice(1, 4)
-      .map(n => Math.max(0, Math.min(255, Math.round(parseFloat(n) * 255))));
-
-    const alphaStr = colorMatch[4];
-    if (alphaStr !== undefined) {
-      const alpha = parseFloat(alphaStr);
-      if (alpha < 0.1) return null;
-
-      if (alpha < 0.95) {
-        r = Math.round(r * alpha + 255 * (1 - alpha));
-        g = Math.round(g * alpha + 255 * (1 - alpha));
-        b = Math.round(b * alpha + 255 * (1 - alpha));
-      }
-    }
-
-    return (
-      "#" +
-      [r, g, b]
-        .map(x => x.toString(16).padStart(2, "0"))
-        .join("")
-        .toUpperCase()
-    );
-  }
-
-  const match = rgba.match(
-    /^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/i,
-  );
-  if (!match) return null;
-
-  let [r, g, b] = match
-    .slice(1, 4)
-    .map(n => Math.max(0, Math.min(255, parseInt(n, 10))));
-
-  const alphaStr = match[4];
-  if (alphaStr !== undefined) {
-    const alpha = parseFloat(alphaStr);
-    if (alpha < 0.1) return null;
-
-    if (alpha < 0.95) {
-      r = Math.round(r * alpha + 255 * (1 - alpha));
-      g = Math.round(g * alpha + 255 * (1 - alpha));
-      b = Math.round(b * alpha + 255 * (1 - alpha));
-    }
-  }
-
-  return (
-    "#" +
-    [r, g, b]
-      .map(x => x.toString(16).padStart(2, "0"))
-      .join("")
-      .toUpperCase()
-  );
 }
 
 // Calculate contrast for text readability
@@ -256,8 +193,7 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
       if (!s.text || s.text.trim().length === 0) return false;
 
       const bgHex = hexify(s.colors.background);
-      const hasBorder = s.colors.borderWidth && s.colors.borderWidth > 0;
-      if (!bgHex && !hasBorder) return false;
+      if (!bgHex) return false;
 
       return true;
     })
@@ -282,6 +218,7 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
         "register",
         "get",
         "free",
+        "join",
       ];
       if (ctaKeywords.some(kw => text.includes(kw))) score += 500;
 
@@ -303,7 +240,7 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
       return { ...s, _score: score };
     })
     .sort((a: any, b: any) => (b._score || 0) - (a._score || 0))
-    .slice(0, 20)
+    .slice(0, 50)
     .map((s, idx) => {
       let bgHex = hexify(s.colors.background);
       const borderHex =

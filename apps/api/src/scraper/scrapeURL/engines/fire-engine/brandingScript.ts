@@ -166,7 +166,7 @@ export const getBrandingScript = () => `
 
     pushQ('header img, .site-logo img, img[alt*=logo i], img[src*="logo"]', 5);
     pushQ(
-      'button, [role=button], [data-primary-button], [data-secondary-button], [data-cta], a.button, a.btn, [class*="btn"], [class*="button"], a[class*="bg-brand"], a[class*="bg-primary"], a[class*="bg-accent"]',
+      'button, [role=button], [data-primary-button], [data-secondary-button], [data-cta], a.button, a.btn, [class*="btn"], [class*="button"], a[class*="bg-brand"], a[class*="bg-primary"], a[class*="bg-accent"], a[type="button"], a[type="button"][class*="bg-"]',
       50,
     );
     pushQ('input, select, textarea, [class*="form-control"]', 25);
@@ -213,7 +213,7 @@ export const getBrandingScript = () => `
     const textColor = cs.getPropertyValue("color");
 
     const isButton = el.matches(
-      'button,[role=button],[data-primary-button],[data-secondary-button],[data-cta],a.button,a.btn,[class*="btn"],[class*="button"],a[class*="bg-brand"],a[class*="bg-primary"],a[class*="bg-accent"]',
+      'button,[role=button],[data-primary-button],[data-secondary-button],[data-cta],a.button,a.btn,[class*="btn"],[class*="button"],a[class*="bg-brand"],a[class*="bg-primary"],a[class*="bg-accent"],a[type="button"],a[type="button"][class*="bg-"]',
     );
 
     let isNavigation = false;
