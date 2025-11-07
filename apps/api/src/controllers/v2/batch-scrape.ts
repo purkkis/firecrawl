@@ -59,7 +59,6 @@ export async function batchScrapeController(
   });
 
   let urls: string[] = parsedBody.urls;
-  let unnormalizedURLs = (preNormalizedBody as any).urls;
   let invalidURLs: string[] | undefined = undefined;
 
   if (parsedBody.ignoreInvalidURLs) {
@@ -67,7 +66,7 @@ export async function batchScrapeController(
 
     let pendingURLs = urls;
     urls = [];
-    unnormalizedURLs = [];
+    const unnormalizedURLs: string[] = [];
     for (const u of pendingURLs) {
       try {
         const nu = urlSchema.parse(u);

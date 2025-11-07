@@ -75,7 +75,7 @@ export async function crawlController(
       removeBase64Images: true,
       fastMode: false,
       blockAds: true,
-      proxy: "auto",
+      proxy: "basic",
       storeInCache: true,
     } as ScrapeOptions);
   const { scrapeOptions, internalOptions } = fromV1ScrapeOptions(

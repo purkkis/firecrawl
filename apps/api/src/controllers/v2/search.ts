@@ -707,7 +707,6 @@ export async function searchController(
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      // In zod v4, ZodError uses 'issues' instead of 'errors'
       logger.warn("Invalid request body", { error: error.issues });
       return res.status(400).json({
         success: false,

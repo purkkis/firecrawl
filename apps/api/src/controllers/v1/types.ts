@@ -78,20 +78,6 @@ export const url = z.preprocess(
   // .refine((x) => !isUrlBlocked(x as string), BLOCKLISTED_URL_MESSAGE),
 );
 
-const strictMessage =
-  "Unrecognized key in body -- please review the v1 API documentation for request body changes";
-
-// Helper function to add strict validation
-// In zod v4, .strict() doesn't accept arguments
-// The custom error message is handled in the error handler (see src/index.ts)
-// We use a type assertion to preserve the input type so optional fields with defaults remain optional
-// The 'as any' is necessary because zod v4's .strict() changes type inference in a way that makes
-// optional fields with defaults appear required, even though they're not at runtime
-function strictWithMessage<T extends z.ZodObject<any>>(schema: T): T {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return schema.strict() as any as T;
-}
-
 const agentExtractModelValue = "fire-1";
 export const isAgentExtractModelValid = (x: string | undefined) =>
   x?.toLowerCase() === agentExtractModelValue;
@@ -647,7 +633,8 @@ const extractRefine = (obj: ScrapeOptionsBase): boolean => {
   );
 };
 
-export const scrapeOptions = strictWithMessage(scrapeOptionsBase)
+export const scrapeOptions = scrapeOptionsBase
+  .strict()
   .refine(
     obj => {
       if (!obj.actions) return true;
@@ -787,7 +774,8 @@ const scrapeRequestSchemaBase = baseScrapeOptions
     zeroDataRetention: z.boolean().optional(),
   });
 
-export const scrapeRequestSchema = strictWithMessage(scrapeRequestSchemaBase)
+export const scrapeRequestSchema = scrapeRequestSchemaBase
+  .strict()
   .refine(extractRefine, extractRefineOpts)
   .refine(fire1Refine, fire1RefineOpts)
   .refine(waitForRefine, waitForRefineOpts)
@@ -809,9 +797,8 @@ const batchScrapeRequestSchemaBase = baseScrapeOptions.extend({
   zeroDataRetention: z.boolean().optional(),
 });
 
-export const batchScrapeRequestSchema = strictWithMessage(
-  batchScrapeRequestSchemaBase,
-)
+export const batchScrapeRequestSchema = batchScrapeRequestSchemaBase
+  .strict()
   .refine(extractRefine, extractRefineOpts)
   .refine(fire1Refine, fire1RefineOpts)
   .refine(waitForRefine, waitForRefineOpts)
@@ -828,13 +815,13 @@ const batchScrapeRequestSchemaNoURLValidationBase = baseScrapeOptions.extend({
   zeroDataRetention: z.boolean().optional(),
 });
 
-export const batchScrapeRequestSchemaNoURLValidation = strictWithMessage(
-  batchScrapeRequestSchemaNoURLValidationBase,
-)
-  .refine(extractRefine, extractRefineOpts)
-  .refine(fire1Refine, fire1RefineOpts)
-  .refine(waitForRefine, waitForRefineOpts)
-  .transform(obj => extractTransform(obj) as typeof obj);
+export const batchScrapeRequestSchemaNoURLValidation =
+  batchScrapeRequestSchemaNoURLValidationBase
+    .strict()
+    .refine(extractRefine, extractRefineOpts)
+    .refine(fire1Refine, fire1RefineOpts)
+    .refine(waitForRefine, waitForRefineOpts)
+    .transform(obj => extractTransform(obj) as typeof obj);
 
 export type BatchScrapeRequest = z.infer<typeof batchScrapeRequestSchema>;
 export type BatchScrapeRequestInput = z.input<typeof batchScrapeRequestSchema>;
@@ -881,7 +868,8 @@ const crawlRequestSchemaBase = crawlerOptions.extend({
   zeroDataRetention: z.boolean().optional(),
 });
 
-export const crawlRequestSchema = strictWithMessage(crawlRequestSchemaBase)
+export const crawlRequestSchema = crawlRequestSchemaBase
+  .strict()
   .refine(
     x => (x.scrapeOptions ? extractRefine(x.scrapeOptions) : true),
     extractRefineOpts,
@@ -957,7 +945,7 @@ const mapRequestSchemaBase = crawlerOptions
     location: locationSchema,
   });
 
-export const mapRequestSchema = strictWithMessage(mapRequestSchemaBase);
+export const mapRequestSchema = mapRequestSchemaBase.strict();
 
 // export type MapRequest = {
 //   url: string;

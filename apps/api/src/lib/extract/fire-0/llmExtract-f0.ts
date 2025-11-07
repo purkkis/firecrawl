@@ -198,7 +198,7 @@ export async function generateCompletions_F0({
 
   const modelId = typeof model === "string" ? model : model.modelId;
 
-  const { maxInputTokens, maxOutputTokens } = getModelLimits_F0(modelId);
+  const { maxInputTokens } = getModelLimits_F0(modelId);
   // Calculate 80% of max input tokens (for content)
   const maxTokensSafe = Math.floor(maxInputTokens * 0.8);
 
