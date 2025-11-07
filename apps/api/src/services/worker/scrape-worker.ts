@@ -1147,7 +1147,7 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
             }
 
             try {
-              if (process.env.GCS_BUCKET_NAME) {
+              if (process.env.GCS_BUCKET_NAME && !job.data.skipNuq) {
                 logger.debug("Job succeeded -- putting null in Redis");
                 return null;
               } else {
