@@ -800,9 +800,8 @@ class NuQ<JobData = any, JobReturnValue = any> {
         const results: NuQJob<JobData, JobReturnValue>[] = [];
 
         // Batch size: 6 params per job, stay well under PG's 65535 param limit
-        // 200 jobs = 1200 params, leaving plenty of headroom
-        // lowered to reduce held locks - mogery
-        const BATCH_SIZE = 200;
+        // 1000 jobs = 6000 params, leaving plenty of headroom
+        const BATCH_SIZE = 1000;
 
         // Helper function to build and execute bulk insert with batching
         const bulkInsert = async (
