@@ -16,6 +16,7 @@ import { withSpan, setSpanAttributes, SpanKind } from "../../lib/otel-tracer";
 import { processJobInternal } from "../../services/worker/scrape-worker";
 import { ScrapeJobData } from "../../types";
 import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
+import { getJobPriority } from "../../lib/job-priority";
 
 export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
@@ -134,7 +135,12 @@ export async function scrapeController(
           aborter.signal,
           timeout ?? 60_000,
           async () => {
-            // TODO(delong3): send 429 on abort
+            const jobPriority = await getJobPriority({
+              team_id: req.auth.team_id,
+              basePriority: 10,
+            });
+
+            // TODO: send 429 on abort
             const lockTime = Date.now() - lockStart;
 
             logger.debug(`Lock acquired for team: ${req.auth.team_id}`, {
@@ -157,7 +163,7 @@ export async function scrapeController(
 
                   status: "active",
                   createdAt: new Date(),
-                  priority: 20,
+                  priority: jobPriority,
                   data: {
                     url: req.body.url,
                     mode: "single_urls",
@@ -267,7 +273,8 @@ export async function scrapeController(
       });
 
       logger.info("Request metrics", {
-        version: "v2.5",
+        version: "v2",
+        noq: true,
         scrapeId: jobId,
         mode: "scrape",
         middlewareStartTime,
