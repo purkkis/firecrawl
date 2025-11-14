@@ -29,6 +29,23 @@ end`,
     release: `
 -- KEYS[1]=leases_zset ; ARGV[1]=holder_id
 return redis.call('ZREM', KEYS[1], ARGV[1])`,
+
+    heartbeat: `
+-- KEYS[1]=leases_zset ; ARGV[1]=holder_id, ARGV[2]=lease_ttl_ms
+local t = redis.call('TIME')
+local now_ms = t[1] * 1000 + math.floor(t[2] / 1000)
+
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now_ms)
+
+local curr = redis.call('ZSCORE', KEYS[1], ARGV[1])
+if not curr then
+  return 0
+end
+
+local new_expiry = now_ms + tonumber(ARGV[2])
+redis.call('ZADD', KEYS[1], 'XX', new_expiry, ARGV[1])
+
+return 1`,
   },
 } as const;
 

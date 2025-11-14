@@ -5,7 +5,7 @@ import { nuqRedis, semaphoreKeys } from "./redis";
 
 const { scripts, runScript, ensure } = nuqRedis;
 
-const SEMAPHORE_TTL = 30 * 1000; // TODO(delong3): scrape max TTL - this needs a heartbeat system
+const SEMAPHORE_TTL = 30 * 1000;
 
 async function acquire(
   teamId: string,
@@ -81,6 +81,19 @@ async function acquireBlocking(
   } while (true);
 }
 
+async function heartbeat(teamId: string, holderId: string): Promise<boolean> {
+  await ensure();
+
+  const keys = semaphoreKeys(teamId);
+  return (
+    (await runScript<number>(
+      scripts.semaphore.heartbeat,
+      [keys.leases],
+      [holderId, SEMAPHORE_TTL],
+    )) === 1
+  );
+}
+
 async function release(teamId: string, holderId: string): Promise<void> {
   await ensure();
 
@@ -104,7 +117,7 @@ async function withSemaphore<T>(
   timeoutMs: number,
   func: (limited: boolean) => Promise<T>,
 ): Promise<T> {
-  if (isSelfHosted() && limit === 0) {
+  if (isSelfHosted() && limit <= 1) {
     limit = 128; // TODO(delong3): change back to `return await func(false)`
     // return await func(false);
   }
@@ -116,9 +129,23 @@ async function withSemaphore<T>(
     signal,
   });
 
+  let intervalHandle: NodeJS.Timeout | null = null;
   try {
+    intervalHandle = setInterval(async () => {
+      _logger.debug("semaphore_heartbeat " + teamId);
+      const success = await heartbeat(teamId, holderId);
+      if (!success) {
+        if (intervalHandle) clearInterval(intervalHandle);
+        throw new TransportableError(
+          "SCRAPE_TIMEOUT",
+          "semaphore_heartbeat_failed",
+        );
+      }
+    }, SEMAPHORE_TTL / 2);
+
     return await func(limited);
   } finally {
+    if (intervalHandle) clearInterval(intervalHandle);
     await release(teamId, holderId).catch(() => {});
   }
 }
