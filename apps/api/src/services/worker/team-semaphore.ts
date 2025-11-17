@@ -2,121 +2,10 @@ import { isSelfHosted } from "../../lib/deployment";
 import { ScrapeJobTimeoutError, TransportableError } from "../../lib/error";
 import { logger as _logger } from "../../lib/logger";
 import { nuqRedis, semaphoreKeys } from "./redis";
-import { createHistogram, monitorEventLoopDelay } from "node:perf_hooks";
+import { createHistogram } from "node:perf_hooks";
 
-const stats = {
-  active_semaphores: 0,
-  semaphore_grants: 0,
-  semaphore_retries: 0,
-  semaphore_failures: 0,
-  semaphore_timeouts: 0,
-  semaphore_aborts: 0,
-};
-
+let active_semaphores = 0;
 let semaphoreAcquireHistogram = createHistogram();
-let semaphoreProcessHistogram = createHistogram();
-
-const histogram = monitorEventLoopDelay();
-histogram.enable();
-
-setInterval(() => {
-  const lagMs = histogram.mean / 1e6;
-  const m = process.memoryUsage();
-
-  _logger.info("api health check monitor", {
-    lag_ms: lagMs.toFixed(2),
-    lagMin: histogram.min / 1e6,
-    lagMax: histogram.max / 1e6,
-    lag_p50_ms: histogram.percentile(50) / 1e6,
-    lag_p90_ms: histogram.percentile(90) / 1e6,
-    lag_p95_ms: histogram.percentile(95) / 1e6,
-    lag_p99_ms: histogram.percentile(99) / 1e6,
-
-    rss_mb: (m.rss / 1024 / 1024).toFixed(1),
-    heap_used_mb: (m.heapUsed / 1024 / 1024).toFixed(1),
-    external_mb: (m.external / 1024 / 1024).toFixed(1),
-
-    active_semaphores: stats.active_semaphores,
-    semaphore_grants: stats.semaphore_grants,
-    semaphore_retries: stats.semaphore_retries,
-    semaphore_failures: stats.semaphore_failures,
-    semaphore_timeouts: stats.semaphore_timeouts,
-    semaphore_aborts: stats.semaphore_aborts,
-
-    acquire_hist: {
-      count: semaphoreAcquireHistogram.count,
-      lastCount: lastHistCount,
-      min: semaphoreAcquireHistogram.min / 1e6,
-      max: semaphoreAcquireHistogram.max / 1e6,
-      mean: semaphoreAcquireHistogram.mean / 1e6,
-      stddev: semaphoreAcquireHistogram.stddev / 1e6,
-      p50_ms: semaphoreAcquireHistogram.percentile(50) / 1e6,
-      p90_ms: semaphoreAcquireHistogram.percentile(90) / 1e6,
-      p95_ms: semaphoreAcquireHistogram.percentile(95) / 1e6,
-      p99_ms: semaphoreAcquireHistogram.percentile(99) / 1e6,
-    },
-
-    process_hist: {
-      count: semaphoreProcessHistogram.count,
-      min: semaphoreProcessHistogram.min / 1e6,
-      max: semaphoreProcessHistogram.max / 1e6,
-      mean: semaphoreProcessHistogram.mean / 1e6,
-      stddev: semaphoreProcessHistogram.stddev / 1e6,
-      p50_ms: semaphoreProcessHistogram.percentile(50) / 1e6,
-      p90_ms: semaphoreProcessHistogram.percentile(90) / 1e6,
-      p95_ms: semaphoreProcessHistogram.percentile(95) / 1e6,
-      p99_ms: semaphoreProcessHistogram.percentile(99) / 1e6,
-    },
-  });
-}, 10_000);
-
-let lastHistCount = 0;
-setInterval(() => {
-  _logger.info("api health check semaphore", {
-    active_semaphores: stats.active_semaphores,
-    semaphore_grants: stats.semaphore_grants,
-    semaphore_retries: stats.semaphore_retries,
-    semaphore_failures: stats.semaphore_failures,
-    semaphore_timeouts: stats.semaphore_timeouts,
-    semaphore_aborts: stats.semaphore_aborts,
-
-    acquire_hist: {
-      count: semaphoreAcquireHistogram.count,
-      lastCount: lastHistCount,
-      min: semaphoreAcquireHistogram.min / 1e6,
-      max: semaphoreAcquireHistogram.max / 1e6,
-      mean: semaphoreAcquireHistogram.mean / 1e6,
-      stddev: semaphoreAcquireHistogram.stddev / 1e6,
-      p50_ms: semaphoreAcquireHistogram.percentile(50) / 1e6,
-      p90_ms: semaphoreAcquireHistogram.percentile(90) / 1e6,
-      p95_ms: semaphoreAcquireHistogram.percentile(95) / 1e6,
-      p99_ms: semaphoreAcquireHistogram.percentile(99) / 1e6,
-    },
-
-    process_hist: {
-      count: semaphoreProcessHistogram.count,
-      min: semaphoreProcessHistogram.min / 1e6,
-      max: semaphoreProcessHistogram.max / 1e6,
-      mean: semaphoreProcessHistogram.mean / 1e6,
-      stddev: semaphoreProcessHistogram.stddev / 1e6,
-      p50_ms: semaphoreProcessHistogram.percentile(50) / 1e6,
-      p90_ms: semaphoreProcessHistogram.percentile(90) / 1e6,
-      p95_ms: semaphoreProcessHistogram.percentile(95) / 1e6,
-      p99_ms: semaphoreProcessHistogram.percentile(99) / 1e6,
-    },
-  });
-
-  lastHistCount = semaphoreAcquireHistogram.count;
-
-  stats.semaphore_grants = 0;
-  stats.semaphore_retries = 0;
-  stats.semaphore_failures = 0;
-  stats.semaphore_timeouts = 0;
-  stats.semaphore_aborts = 0;
-
-  semaphoreAcquireHistogram = createHistogram();
-  semaphoreProcessHistogram = createHistogram();
-}, 60_000);
 
 const { scripts, runScript, ensure } = nuqRedis;
 
@@ -167,12 +56,10 @@ async function acquireBlocking(
 
   do {
     if (options.signal.aborted) {
-      stats.semaphore_aborts++;
       throw new ScrapeJobTimeoutError("Scrape timed out");
     }
 
     if (deadline < Date.now()) {
-      stats.semaphore_timeouts++;
       throw new ScrapeJobTimeoutError("Scrape timed out");
     }
 
@@ -189,12 +76,8 @@ async function acquireBlocking(
     if (granted === 1) {
       const duration = process.hrtime.bigint() - start;
       semaphoreAcquireHistogram.record(duration);
-      stats.semaphore_grants++;
-
       return { limited: failedOnce, removed: totalRemoved };
     }
-
-    stats.semaphore_retries++;
 
     failedOnce = true;
 
@@ -272,8 +155,7 @@ async function withSemaphore<T>(
       teamId,
       jobId: holderId,
     });
-    // return await func(false);
-    limit = 2;
+    return await func(false);
   }
 
   const { limited } = await acquireBlocking(teamId, holderId, limit, {
@@ -283,31 +165,51 @@ async function withSemaphore<T>(
     signal,
   });
 
-  if (limited) {
-    stats.semaphore_failures++;
-  }
-
   const hb = startHeartbeat(teamId, holderId, SEMAPHORE_TTL / 2);
-  const start = process.hrtime.bigint();
 
-  stats.active_semaphores++;
+  active_semaphores++;
   try {
     const result = await Promise.race([func(limited), hb.promise]);
     return result;
   } finally {
-    const duration = process.hrtime.bigint() - start;
-    semaphoreProcessHistogram.record(duration);
-
-    stats.active_semaphores--;
+    active_semaphores--;
     hb.stop();
 
     await release(teamId, holderId).catch(() => {});
   }
 }
 
+const getMetrics = () => {
+  const h = semaphoreAcquireHistogram;
+  const p50 = h.percentile(50);
+  const p90 = h.percentile(90);
+  const p99 = h.percentile(99);
+  const max = h.max;
+
+  return (
+    [
+      "# HELP noq_semaphore_active Number of active semaphore holders",
+      "# TYPE noq_semaphore_active gauge",
+      `noq_semaphore_active ${active_semaphores}`,
+
+      "# HELP noq_semaphore_acquire_duration_seconds Semaphore acquire time",
+      "# TYPE noq_semaphore_acquire_duration_seconds gauge",
+      `noq_semaphore_acquire_duration_seconds_p50 ${p50 / 1e9}`,
+      `noq_semaphore_acquire_duration_seconds_p90 ${p90 / 1e9}`,
+      `noq_semaphore_acquire_duration_seconds_p99 ${p99 / 1e9}`,
+      `noq_semaphore_acquire_duration_seconds_max ${max / 1e9}`,
+
+      "# HELP noq_semaphore_acquire_observations_total Number of recorded semaphore acquire durations",
+      "# TYPE noq_semaphore_acquire_observations_total counter",
+      `noq_semaphore_acquire_observations_total ${h.count}`,
+    ].join("\n") + "\n"
+  );
+};
+
 export const teamConcurrencySemaphore = {
   acquire,
   release,
   withSemaphore,
   count,
+  getMetrics,
 };

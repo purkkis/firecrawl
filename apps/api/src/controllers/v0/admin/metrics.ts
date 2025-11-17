@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { redisEvictConnection } from "../../../services/redis";
 import { nuqGetLocalMetrics, scrapeQueue } from "../../../services/worker/nuq";
+import { teamConcurrencySemaphore } from "../../../services/worker/team-semaphore";
 
 export async function metricsController(_: Request, res: Response) {
   let cursor: string = "0";
@@ -37,6 +38,8 @@ ${Object.entries(metrics)
   .join("\n")}
 
 ${nuqGetLocalMetrics()}
+
+${teamConcurrencySemaphore.getMetrics()}
 `);
 }
 
