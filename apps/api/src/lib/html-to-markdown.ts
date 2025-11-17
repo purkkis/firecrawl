@@ -7,6 +7,7 @@ import { logger } from "./logger";
 import { stat } from "fs/promises";
 import { HTML_TO_MARKDOWN_PATH } from "../natives";
 import { convertHTMLToMarkdownWithHttpService } from "./html-to-markdown-client";
+import { postProcessMarkdown } from "@mendable/firecrawl-rs";
 dotenv.config();
 
 // TODO: add a timeout to the Go parser
@@ -62,8 +63,7 @@ export async function parseMarkdown(
   if (process.env.HTML_TO_MARKDOWN_SERVICE_URL) {
     try {
       let markdownContent = await convertHTMLToMarkdownWithHttpService(html);
-      markdownContent = processMultiLineLinks(markdownContent);
-      markdownContent = removeSkipToContentLinks(markdownContent);
+      markdownContent = await postProcessMarkdown(markdownContent);
       return markdownContent;
     } catch (error) {
       logger.error(
@@ -82,9 +82,7 @@ export async function parseMarkdown(
     if (process.env.USE_GO_MARKDOWN_PARSER == "true") {
       const converter = await GoMarkdownConverter.getInstance();
       let markdownContent = await converter.convertHTMLToMarkdown(html);
-
-      markdownContent = processMultiLineLinks(markdownContent);
-      markdownContent = removeSkipToContentLinks(markdownContent);
+      markdownContent = await postProcessMarkdown(markdownContent);
       // logger.info(`HTML to Markdown conversion using Go parser successful`);
       return markdownContent;
     }
@@ -129,8 +127,7 @@ export async function parseMarkdown(
 
   try {
     let markdownContent = await turndownService.turndown(html);
-    markdownContent = processMultiLineLinks(markdownContent);
-    markdownContent = removeSkipToContentLinks(markdownContent);
+    markdownContent = await postProcessMarkdown(markdownContent);
 
     return markdownContent;
   } catch (error) {
