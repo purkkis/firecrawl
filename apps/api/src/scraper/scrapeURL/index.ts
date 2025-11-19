@@ -4,6 +4,7 @@ import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 
 import {
   type Document,
+  getPDFMaxPages,
   scrapeOptions,
   type ScrapeOptions,
   type TeamFlags,
@@ -1113,6 +1114,28 @@ export async function scrapeURL(
           result.success && result.document.metadata.cacheState === "hit",
       });
 
+      if (useIndex) {
+        meta.logger.debug("scrapeURL index metrics", {
+          module: "scrapeURL/index-metrics",
+          timeTaken: Date.now() - startTime,
+          changeTracking: hasFormatOfType(
+            meta.options.formats,
+            "changeTracking",
+          ),
+          branding: hasFormatOfType(meta.options.formats, "branding"),
+          pdfMaxPages: getPDFMaxPages(meta.options.parsers),
+          maxAge: meta.options.maxAge,
+          headers: meta.options.headers
+            ? Object.keys(meta.options.headers).length
+            : 0,
+          actions: meta.options.actions?.length ?? 0,
+          proxy: meta.options.proxy,
+          success: result.success,
+          indexHit:
+            result.success && result.document.metadata.cacheState === "hit",
+        });
+      }
+
       setSpanAttributes(span, {
         "scrape.success": true,
         "scrape.duration_ms": Date.now() - startTime,
@@ -1133,6 +1156,27 @@ export async function scrapeURL(
         success: false,
         indexHit: false,
       });
+
+      if (useIndex) {
+        meta.logger.debug("scrapeURL index metrics", {
+          module: "scrapeURL/index-metrics",
+          timeTaken: Date.now() - startTime,
+          changeTracking: hasFormatOfType(
+            meta.options.formats,
+            "changeTracking",
+          ),
+          branding: hasFormatOfType(meta.options.formats, "branding"),
+          pdfMaxPages: getPDFMaxPages(meta.options.parsers),
+          maxAge: meta.options.maxAge,
+          headers: meta.options.headers
+            ? Object.keys(meta.options.headers).length
+            : 0,
+          actions: meta.options.actions?.length ?? 0,
+          proxy: meta.options.proxy,
+          success: false,
+          indexHit: false,
+        });
+      }
 
       // Set error attributes on span
       let errorType = "unknown";
