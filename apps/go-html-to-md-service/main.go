@@ -18,13 +18,23 @@ const (
 	defaultShutdownTimeout = 30 * time.Second
 	defaultReadTimeout     = 30 * time.Second
 	defaultWriteTimeout    = 30 * time.Second
-	maxUploadSize = 36 * 1024 * 1024
+	maxUploadSize          = 36 * 1024 * 1024
 )
 
 func main() {
 	// Configure logging
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339})
+
+	env := os.Getenv("ENV")
+
+	if env == "production" {
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	} else {
+		log.Logger = log.Output(zerolog.ConsoleWriter{
+			Out:        os.Stdout,
+			TimeFormat: time.RFC3339,
+		})
+	}
 
 	// Get port from environment or use default
 	port := os.Getenv("PORT")
@@ -60,7 +70,11 @@ func main() {
 
 	// Start server in goroutine
 	go func() {
-		log.Info().Str("port", port).Msg("Starting HTML to Markdown service")
+		log.Info().
+			Str("port", port).
+			Str("env", env).
+			Msg("Starting HTML to Markdown service")
+
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal().Err(err).Msg("Failed to start server")
 		}
