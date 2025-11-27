@@ -33,6 +33,12 @@ export const logIgnoreList = [
   "request completed",
   "nuqAddJobs metrics",
   "nuqGetJobs metrics",
+  "nuqAddGroup metrics",
+  "nuqGetGroup metrics",
+  "NuQ job prefetch sent",
+  "Acquired job",
+  "nuqGetJob metrics",
+  "nuqJobFinish metrics",
 ];
 
 export async function getLogs() {
