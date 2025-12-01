@@ -152,12 +152,9 @@ export async function createUserController(req: Request, res: Response) {
         if (existingApiKey.length > 0) {
           apiKey = existingApiKey[0].key;
         } else {
-          return res
-            .status(500)
-            .json({
-              error:
-                "No api key found for existing team with the same referrer",
-            });
+          return res.status(500).json({
+            error: "No api key found for existing team with the same referrer",
+          });
         }
 
         alreadyExisted = true;
@@ -166,7 +163,7 @@ export async function createUserController(req: Request, res: Response) {
         const { data: newTeam, error: newTeamError } = await supabase_service
           .from("teams")
           .insert({
-            name: "Personal",
+            name: "via " + (integration.display_name ?? integration.slug),
             referrer_integration: integration.slug,
           })
           .select()
