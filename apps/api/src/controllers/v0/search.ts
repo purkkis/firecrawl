@@ -242,7 +242,7 @@ export async function searchController(req: Request, res: Response) {
     );
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - startTime) / 1000;
-    logSearch({
+    await logSearch({
       id: jobId,
       request_id: jobId,
       query: req.body.query,
