@@ -90,16 +90,28 @@ export async function createUserController(req: Request, res: Response) {
     let apiKey: string;
     let alreadyExisted = false;
 
-    if (
-      preexistingUser.length > 0 &&
-      preexistingUser[0].referrer_integration !== integration.slug
-    ) {
+    if (preexistingUser.length > 0) {
+      const { data: userTeams, error: userTeamsError } = await supabase_service
+        .from("user_teams")
+        .select("*")
+        .eq("user_id", preexistingUser[0].id);
+      if (userTeamsError) {
+        logger.error("Failed to look up user teams", {
+          error: userTeamsError,
+        });
+        return res.status(500).json({ error: "Failed to look up user teams" });
+      }
+
       // check if a team of the same referrer already exists
       const { data: existingTeam, error: existingTeamError } =
         await supabase_service
           .from("teams")
           .select("*")
           .eq("referrer_integration", integration.slug)
+          .in(
+            "id",
+            userTeams.map(team => team.team_id),
+          )
           .limit(1);
       if (existingTeamError) {
         logger.error("Failed to look up existing team", {
