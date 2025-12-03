@@ -326,7 +326,7 @@ export async function x402SearchController(
         id: jobId,
         request_id: jobId,
         query: req.body.query,
-        success: true,
+        is_successful: true,
         error: undefined,
         results: responseData.data,
         num_results: responseData.data.length,

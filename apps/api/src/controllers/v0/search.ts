@@ -247,7 +247,7 @@ export async function searchController(req: Request, res: Response) {
       request_id: jobId,
       query: req.body.query,
       num_results: result.data?.length ?? 0,
-      success: result.success,
+      is_successful: result.success,
       error: result.error,
       results: result.data,
       time_taken: timeTakenInSeconds,

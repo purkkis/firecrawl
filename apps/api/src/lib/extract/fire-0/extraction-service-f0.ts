@@ -128,7 +128,7 @@ export async function performExtraction_F0(
       options: request,
       model_kind: "fire-0",
       credits_cost: 0,
-      success: false,
+      is_successful: false,
       error: "No search results found",
     });
     return {
@@ -228,7 +228,7 @@ export async function performExtraction_F0(
       team_id: teamId,
       options: request,
       credits_cost: 0,
-      success: false,
+      is_successful: false,
       error: "No valid URLs found to scrape",
       model_kind: "fire-0",
     });
@@ -601,7 +601,7 @@ export async function performExtraction_F0(
         team_id: teamId,
         options: request,
         credits_cost: 0,
-        success: false,
+        is_successful: false,
         error: "Failed to transform array to object",
         model_kind: "fire-0",
       });
@@ -694,7 +694,7 @@ export async function performExtraction_F0(
         options: request,
         model_kind: "fire-0",
         credits_cost: 0,
-        success: false,
+        is_successful: false,
         error: "Failed to scrape documents",
       });
       return {
@@ -717,7 +717,7 @@ export async function performExtraction_F0(
         options: request,
         model_kind: "fire-0",
         credits_cost: 0,
-        success: false,
+        is_successful: false,
         error: "All provided URLs are invalid",
       });
       return {
@@ -882,7 +882,7 @@ export async function performExtraction_F0(
     options: request,
     model_kind: "fire-0",
     credits_cost: Math.ceil(tokensToBill / 15),
-    success: true,
+    is_successful: true,
     result: finalResult ?? {},
     cost_tracking: {
       calls: tokenUsage.map(usage => ({

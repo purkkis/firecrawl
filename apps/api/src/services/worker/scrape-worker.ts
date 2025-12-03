@@ -462,7 +462,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           id: job.id,
           request_id: job.data.requestId ?? job.data.crawl_id ?? job.id,
           url: job.data.url,
-          success: true,
+          is_successful: true,
           doc,
           time_taken: timeTakenInSeconds,
           team_id: job.data.team_id,
@@ -530,7 +530,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           id: job.id,
           request_id: job.data.requestId ?? job.data.crawl_id ?? job.id,
           url: job.data.url,
-          success: true,
+          is_successful: true,
           doc,
           time_taken: timeTakenInSeconds,
           team_id: job.data.team_id,
@@ -680,7 +680,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         id: job.id,
         request_id: job.data.requestId ?? job.data.crawl_id ?? job.id,
         url: job.data.url,
-        success: false,
+        is_successful: false,
         error:
           typeof error === "string"
             ? error

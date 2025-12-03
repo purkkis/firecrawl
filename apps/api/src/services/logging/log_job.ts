@@ -140,7 +140,7 @@ export type LoggedScrape = {
   id: string;
   request_id: string;
   url: string;
-  success: boolean;
+  is_successful: boolean;
   error?: string;
   doc?: Document;
   time_taken: number;
@@ -171,7 +171,7 @@ export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
       url: scrape.zeroDataRetention
         ? "<redacted due to zero data retention>"
         : scrape.url,
-      success: scrape.success,
+      is_successful: scrape.is_successful,
       error: scrape.error ?? null,
       time_taken: scrape.time_taken,
       team_id:
@@ -200,7 +200,7 @@ export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
   }
 
   if (
-    scrape.success &&
+    scrape.is_successful &&
     !scrape.zeroDataRetention &&
     process.env.USE_DB_AUTHENTICATION === "true"
   ) {
@@ -331,7 +331,7 @@ export type LoggedSearch = {
   options: any;
   time_taken: number;
   credits_cost: number;
-  success: boolean;
+  is_successful: boolean;
   error?: string;
   num_results: number;
   results: any;
@@ -362,7 +362,7 @@ export async function logSearch(search: LoggedSearch, force: boolean = false) {
           : search.team_id,
       options: search.zeroDataRetention ? null : search.options,
       credits_cost: search.credits_cost,
-      success: search.success,
+      is_successful: search.is_successful,
       error: search.zeroDataRetention ? null : (search.error ?? null),
       num_results: search.num_results,
       time_taken: search.time_taken,
@@ -384,7 +384,7 @@ export type LoggedExtract = {
   options: any;
   model_kind: "fire-0" | "fire-1";
   credits_cost: number;
-  success: boolean;
+  is_successful: boolean;
   error?: string;
   result?: any;
   cost_tracking?: ReturnType<typeof CostTracking.prototype.toJSON>;
@@ -415,7 +415,7 @@ export async function logExtract(
       options: extract.options,
       model_kind: extract.model_kind,
       credits_cost: extract.credits_cost,
-      success: extract.success,
+      is_successful: extract.is_successful,
       error: extract.error ?? null,
       cost_tracking: extract.cost_tracking ?? null,
     },
