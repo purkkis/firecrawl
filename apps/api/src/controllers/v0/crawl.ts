@@ -189,6 +189,13 @@ export async function crawlController(req: Request, res: Response) {
       : false;
     delete (scrapeOptions as any).timeout;
 
+    // Compute effective ignoreRobotsTxt from team flags and crawl options
+    const effectiveIgnoreRobotsTxt =
+      auth.chunk?.flags?.ignoreRobots ||
+      crawlerOptions.ignoreRobotsTxt ||
+      false;
+    internalOptions.ignoreRobotsTxt = effectiveIgnoreRobotsTxt;
+
     const sc: StoredCrawl = {
       originUrl: url,
       crawlerOptions,

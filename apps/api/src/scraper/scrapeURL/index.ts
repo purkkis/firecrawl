@@ -360,6 +360,7 @@ export type InternalOptions = {
   v1OriginalFormat?: "extract" | "json"; // Track original v1 format for backward compatibility
 
   isPreCrawl?: boolean; // Whether this scrape is part of a precrawl job
+  ignoreRobotsTxt?: boolean; // Whether to ignore robots.txt for this scrape (from crawl options)
 };
 
 type EngineScrapeResultWithContext = {
@@ -888,7 +889,15 @@ export async function scrapeURL(
       });
     }
 
-    if (internalOptions.teamFlags?.checkRobotsOnScrape) {
+    // Check robots.txt if team has checkRobotsOnScrape enabled, unless:
+    // - Team has ignoreRobots flag set, or
+    // - Crawl/scrape has ignoreRobotsTxt option set
+    const shouldCheckRobots =
+      internalOptions.teamFlags?.checkRobotsOnScrape &&
+      !internalOptions.teamFlags?.ignoreRobots &&
+      !internalOptions.ignoreRobotsTxt;
+
+    if (shouldCheckRobots) {
       await withSpan("scrape.robots_check", async robotsSpan => {
         const urlToCheck = meta.rewrittenUrl || meta.url;
         meta.logger.info("Checking robots.txt", { url: urlToCheck });

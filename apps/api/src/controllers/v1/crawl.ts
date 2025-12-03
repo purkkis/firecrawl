@@ -98,6 +98,10 @@ export async function crawlController(
     originalBodyLimit: preNormalizedBody.limit,
   });
 
+  // Compute effective ignoreRobotsTxt from team flags and crawl options
+  const effectiveIgnoreRobotsTxt =
+    req.acuc?.flags?.ignoreRobots || req.body.ignoreRobotsTxt || false;
+
   const sc: StoredCrawl = {
     originUrl: req.body.url,
     crawlerOptions: toLegacyCrawlerOptions(crawlerOptions),
@@ -110,6 +114,7 @@ export async function crawlController(
         ? true
         : false,
       zeroDataRetention,
+      ignoreRobotsTxt: effectiveIgnoreRobotsTxt,
     }, // NOTE: smart wait disabled for crawls to ensure contentful scrape, speed does not matter
     team_id: req.auth.team_id,
     createdAt: Date.now(),
