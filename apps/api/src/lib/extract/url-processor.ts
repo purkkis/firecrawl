@@ -18,7 +18,7 @@ export async function generateBasicCompletion(
 ): Promise<{ text: string } | null> {
   try {
     const result = await generateText({
-      model: getModel("gpt-4o-mini", "openai"),
+      model: getModel("gpt-4o", "openai"),
       prompt: prompt,
       providerOptions: {
         anthropic: {
@@ -52,9 +52,9 @@ export async function generateBasicCompletion(
         module: "extract",
         method: "generateBasicCompletion",
       },
-      model: "openai/gpt-4o-mini",
+      model: "openai/gpt-4o",
       cost: calculateCost(
-        "openai/gpt-4o-mini",
+        "openai/gpt-4o",
         result.usage?.inputTokens ?? 0,
         result.usage?.outputTokens ?? 0,
       ),
