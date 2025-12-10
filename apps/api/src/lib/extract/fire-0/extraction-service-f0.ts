@@ -935,7 +935,7 @@ export async function performExtraction_F0(
       });
     })
     .catch(error => {
-      logger.error(`Failed to log extract ${extractId} to database: ${error}`);
+      logger.error("Failed to log extract to database", { extractId, error });
     });
 
   logger.debug("Done!");
