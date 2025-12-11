@@ -1048,7 +1048,8 @@ export async function performExtraction(
       })
       .catch(error => {
         logger.error(
-          `Failed to log extract ${extractId} to database: ${error}`,
+          "Failed to log extract to database",
+          { extractId, error },
         );
       });
 
