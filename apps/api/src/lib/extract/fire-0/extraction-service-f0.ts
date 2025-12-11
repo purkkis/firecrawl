@@ -929,9 +929,10 @@ export async function performExtraction_F0(
         tokensBilled: tokensToBill,
         creditsBilled: creditsToBill,
       }).catch(error => {
-        logger.error(
-          `Failed to update extract ${extractId} status to completed: ${error}`,
-        );
+        logger.error("Failed to update extract status to completed", {
+          extractId,
+          error,
+        });
       });
     })
     .catch(error => {
