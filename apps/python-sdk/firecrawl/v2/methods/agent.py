@@ -4,13 +4,14 @@ import time
 from ..types import AgentResponse
 from ..utils.http_client import HttpClient
 from ..utils.error_handler import handle_response_error
+from ..utils.validation import _normalize_schema
 
 
 def _prepare_agent_request(
     urls: Optional[List[str]],
     *,
     prompt: str,
-    schema: Optional[Dict[str, Any]] = None,
+    schema: Optional[Any] = None,
     integration: Optional[str] = None,
     max_credits: Optional[int] = None,
     strict_constrain_to_urls: Optional[bool] = None,
@@ -20,7 +21,9 @@ def _prepare_agent_request(
         body["urls"] = urls
     body["prompt"] = prompt
     if schema is not None:
-        body["schema"] = schema
+        normalized_schema = _normalize_schema(schema)
+        if normalized_schema is not None:
+            body["schema"] = normalized_schema
     if integration is not None and str(integration).strip():
         body["integration"] = str(integration).strip()
     if max_credits is not None and max_credits > 0:
@@ -44,7 +47,7 @@ def start_agent(
     urls: Optional[List[str]],
     *,
     prompt: str,
-    schema: Optional[Dict[str, Any]] = None,
+    schema: Optional[Any] = None,
     integration: Optional[str] = None,
     max_credits: Optional[int] = None,
     strict_constrain_to_urls: Optional[bool] = None,
@@ -94,7 +97,7 @@ def agent(
     urls: Optional[List[str]],
     *,
     prompt: str,
-    schema: Optional[Dict[str, Any]] = None,
+    schema: Optional[Any] = None,
     integration: Optional[str] = None,
     poll_interval: int = 2,
     timeout: Optional[int] = None,
