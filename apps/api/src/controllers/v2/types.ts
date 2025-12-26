@@ -732,6 +732,12 @@ export const agentRequestSchema = z.strictObject({
   integration: integrationSchema.optional().transform(val => val || null),
   maxCredits: z.number().optional(),
   strictConstrainToURLs: z.boolean().optional(),
+  scrapeOptions: z
+    .object({
+      maxAge: z.number().int().nonnegative().optional(),
+      minAge: z.number().int().nonnegative().optional(),
+    })
+    .optional(),
 
   overrideWhitelist: z.string().optional(),
 });
