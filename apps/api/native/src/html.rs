@@ -871,11 +871,11 @@ fn _extract_images(
     }
   }
 
-  // <... style="background-image: url(...)">
-  if let Ok(elements) = document.select("[style*=\"background-image\"]") {
+  // <... style="background: url(...)"> or <... style="background-image: url(...)">
+  if let Ok(elements) = document.select("[style*=\"background\"]") {
     for element in elements {
       if let Some(style) = element.attributes.borrow().get("style") {
-        if let Some(cap) = URL_REGEX.captures(style) {
+        for cap in URL_REGEX.captures_iter(style) {
           if let Some(url_match) = cap.get(1) {
             let url = url_match.as_str().trim();
             if !url.is_empty() {
