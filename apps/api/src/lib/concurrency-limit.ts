@@ -64,7 +64,7 @@ export async function removeConcurrencyLimitActiveJob(
 
 // ============= Concurrency Queue (Backlog) =============
 
-export type ConcurrencyLimitedJob = {
+type ConcurrencyLimitedJob = {
   id: string;
   data: any;
   priority: number;
@@ -133,22 +133,22 @@ export async function getConcurrencyLimitedJobs(
  * Get queued job IDs for a specific crawl.
  * More efficient than getConcurrencyLimitedJobs when you only need jobs for a specific crawl.
  */
-export async function getCrawlQueuedJobIds(
-  crawl_id: string,
-): Promise<Set<string>> {
-  return await fdbQueue.getCrawlQueuedJobIds(crawl_id);
-}
+// async function getCrawlQueuedJobIds(
+//   crawl_id: string,
+// ): Promise<Set<string>> {
+//   return await fdbQueue.getCrawlQueuedJobIds(crawl_id);
+// }
 
 /**
  * Check if a specific job is in the queue for a crawl.
  * O(1) lookup using the crawl index.
  */
-export async function isJobInCrawlQueue(
-  crawl_id: string,
-  job_id: string,
-): Promise<boolean> {
-  return await fdbQueue.isJobInCrawlQueue(crawl_id, job_id);
-}
+// async function isJobInCrawlQueue(
+//   crawl_id: string,
+//   job_id: string,
+// ): Promise<boolean> {
+//   return await fdbQueue.isJobInCrawlQueue(crawl_id, job_id);
+// }
 
 // ============= Crawl-Level Active Job Tracking =============
 
@@ -206,9 +206,7 @@ async function removeCrawlConcurrencyLimitActiveJob(
  * @param teamId The team ID to get the next job for.
  * @returns A job that can be run, or null if there are no more jobs to run.
  */
-async function getNextConcurrentJob(
-  teamId: string,
-): Promise<{
+async function getNextConcurrentJob(teamId: string): Promise<{
   job: ConcurrencyLimitedJob;
   timeout: number;
 } | null> {
@@ -228,7 +226,8 @@ async function getNextConcurrentJob(
     }
 
     const maxCrawlConcurrency =
-      typeof sc.crawlerOptions?.delay === "number" && sc.crawlerOptions.delay > 0
+      typeof sc.crawlerOptions?.delay === "number" &&
+      sc.crawlerOptions.delay > 0
         ? 1
         : (sc.maxConcurrency ?? null);
 
@@ -331,16 +330,12 @@ export async function concurrentJobDone(job: NuQJob<any>): Promise<void> {
           // With FDB, jobs are no longer in the PG backlog.
           // We just add the job directly to the queue.
           const addedSuccessfully =
-            (await scrapeQueue.addJob(
-              nextJob.job.id,
-              nextJob.job.data,
-              {
-                priority: nextJob.job.priority,
-                listenable: nextJob.job.listenable,
-                ownerId: nextJob.job.data.team_id ?? undefined,
-                groupId: nextJob.job.data.crawl_id ?? undefined,
-              },
-            )) !== null;
+            (await scrapeQueue.addJob(nextJob.job.id, nextJob.job.data, {
+              priority: nextJob.job.priority,
+              listenable: nextJob.job.listenable,
+              ownerId: nextJob.job.data.team_id ?? undefined,
+              groupId: nextJob.job.data.crawl_id ?? undefined,
+            })) !== null;
 
           if (addedSuccessfully) {
             logger.debug("Successfully promoted concurrent queued job", {

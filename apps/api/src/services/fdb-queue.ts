@@ -20,7 +20,7 @@ const COUNTER_CRAWL = Buffer.from([0x02]);
 const COUNTER_ACTIVE_TEAM = Buffer.from([0x03]);
 const COUNTER_ACTIVE_CRAWL = Buffer.from([0x04]);
 
-export type FDBQueueJob = {
+type FDBQueueJob = {
   id: string;
   data: any;
   priority: number;
@@ -47,7 +47,7 @@ const CIRCUIT_FAILURE_THRESHOLD = 3; // Open circuit after 3 consecutive failure
  * Error thrown when FDB circuit breaker is open.
  * Callers should handle this gracefully (e.g., log and retry later).
  */
-export class FDBCircuitOpenError extends Error {
+class FDBCircuitOpenError extends Error {
   constructor() {
     super("FDB circuit breaker is open - FoundationDB is unavailable");
     this.name = "FDBCircuitOpenError";
@@ -111,17 +111,17 @@ function recordFailure(error: unknown): void {
 /**
  * Get current circuit breaker status for monitoring.
  */
-export function getCircuitBreakerStatus(): {
-  state: CircuitState;
-  consecutiveFailures: number;
-  openedAt: number | null;
-} {
-  return {
-    state: circuitState,
-    consecutiveFailures,
-    openedAt: circuitState === "open" ? circuitOpenedAt : null,
-  };
-}
+// function getCircuitBreakerStatus(): {
+//   state: CircuitState;
+//   consecutiveFailures: number;
+//   openedAt: number | null;
+// } {
+//   return {
+//     state: circuitState,
+//     consecutiveFailures,
+//     openedAt: circuitState === "open" ? circuitOpenedAt : null,
+//   };
+// }
 
 function getDb(): fdb.Database {
   if (!db) {
@@ -142,23 +142,23 @@ function getDb(): fdb.Database {
  * Returns true if healthy, false otherwise.
  * Also updates circuit breaker state.
  */
-export async function checkFDBHealth(): Promise<boolean> {
-  if (!config.FDB_CLUSTER_FILE) {
-    return false;
-  }
+// async function checkFDBHealth(): Promise<boolean> {
+//   if (!config.FDB_CLUSTER_FILE) {
+//     return false;
+//   }
 
-  try {
-    const database = getDb();
-    // Perform a simple read (empty key range) to verify connectivity
-    await database.get(Buffer.from("__health_check__"));
-    recordSuccess();
-    return true;
-  } catch (error) {
-    recordFailure(error);
-    logger.error("FDB health check failed", { error });
-    return false;
-  }
-}
+//   try {
+//     const database = getDb();
+//     // Perform a simple read (empty key range) to verify connectivity
+//     await database.get(Buffer.from("__health_check__"));
+//     recordSuccess();
+//     return true;
+//   } catch (error) {
+//     recordFailure(error);
+//     logger.error("FDB health check failed", { error });
+//     return false;
+//   }
+// }
 
 // Helper to encode a 64-bit integer as a big-endian buffer for proper ordering
 function encodeInt64BE(n: number): Buffer {
@@ -192,15 +192,9 @@ function buildQueueKey(
   teamId: string,
   priority: number,
   createdAt: number,
-  jobId: string
+  jobId: string,
 ): Buffer {
-  return fdb.tuple.pack([
-    QUEUE_PREFIX,
-    teamId,
-    priority,
-    createdAt,
-    jobId,
-  ]);
+  return fdb.tuple.pack([QUEUE_PREFIX, teamId, priority, createdAt, jobId]);
 }
 
 // Build crawl index key: (prefix, crawl_id, job_id)
@@ -237,7 +231,11 @@ function buildActiveCrawlKey(crawlId: string, jobId: string): Buffer {
 
 // Build TTL index key: (prefix, expires_at, team_id, job_id)
 // Sorted by expires_at for efficient cleanup scanning
-function buildTTLIndexKey(expiresAt: number, teamId: string, jobId: string): Buffer {
+function buildTTLIndexKey(
+  expiresAt: number,
+  teamId: string,
+  jobId: string,
+): Buffer {
   return fdb.tuple.pack([TTL_INDEX_PREFIX, expiresAt, teamId, jobId]);
 }
 
@@ -254,14 +252,15 @@ export async function pushJob(
     listenChannelId?: string;
   },
   timeout: number,
-  crawlId?: string
+  crawlId?: string,
 ): Promise<void> {
   checkCircuit(); // Check circuit breaker before operation
   const database = getDb();
   const createdAt = Date.now();
   // For crawl jobs, no timeout (they wait until crawl completes).
   // For non-crawl jobs, if timeout is 0, Infinity, or very large, no timeout.
-  const hasTimeout = !crawlId && timeout > 0 && timeout < Number.MAX_SAFE_INTEGER;
+  const hasTimeout =
+    !crawlId && timeout > 0 && timeout < Number.MAX_SAFE_INTEGER;
   const timesOutAt = hasTimeout ? createdAt + timeout : undefined;
 
   const jobData: FDBQueueJob = {
@@ -277,7 +276,7 @@ export async function pushJob(
   };
 
   try {
-    await database.doTransaction(async (tr) => {
+    await database.doTransaction(async tr => {
       const queueKey = buildQueueKey(teamId, job.priority, createdAt, job.id);
       tr.set(queueKey, Buffer.from(JSON.stringify(jobData)));
 
@@ -288,7 +287,12 @@ export async function pushJob(
       // Add to TTL index if job has a timeout (for efficient cleanup)
       if (timesOutAt) {
         const ttlKey = buildTTLIndexKey(timesOutAt, teamId, job.id);
-        tr.set(ttlKey, Buffer.from(JSON.stringify({ priority: job.priority, createdAt, crawlId })));
+        tr.set(
+          ttlKey,
+          Buffer.from(
+            JSON.stringify({ priority: job.priority, createdAt, crawlId }),
+          ),
+        );
       }
 
       // If crawlId, add to crawl index and increment crawl counter
@@ -297,7 +301,9 @@ export async function pushJob(
         // Store teamId in the value so we can find the queue key later
         tr.set(
           crawlIndexKey,
-          Buffer.from(JSON.stringify({ teamId, priority: job.priority, createdAt }))
+          Buffer.from(
+            JSON.stringify({ teamId, priority: job.priority, createdAt }),
+          ),
         );
 
         const crawlCounterKey = buildCrawlCounterKey(crawlId);
@@ -322,87 +328,87 @@ export async function pushJob(
 /**
  * Push multiple jobs atomically
  */
-export async function pushJobs(
-  jobs: Array<{
-    teamId: string;
-    id: string;
-    data: any;
-    priority: number;
-    listenable: boolean;
-    listenChannelId?: string;
-    timeout: number;
-    crawlId?: string;
-  }>
-): Promise<void> {
-  if (jobs.length === 0) return;
+// async function pushJobs(
+//   jobs: Array<{
+//     teamId: string;
+//     id: string;
+//     data: any;
+//     priority: number;
+//     listenable: boolean;
+//     listenChannelId?: string;
+//     timeout: number;
+//     crawlId?: string;
+//   }>
+// ): Promise<void> {
+//   if (jobs.length === 0) return;
 
-  checkCircuit(); // Check circuit breaker before operation
-  const database = getDb();
-  const now = Date.now();
+//   checkCircuit(); // Check circuit breaker before operation
+//   const database = getDb();
+//   const now = Date.now();
 
-  try {
-    await database.doTransaction(async (tr) => {
-      // Group by team and crawl for counter increments
-      const teamCounts = new Map<string, number>();
-      const crawlCounts = new Map<string, number>();
+//   try {
+//     await database.doTransaction(async (tr) => {
+//       // Group by team and crawl for counter increments
+//       const teamCounts = new Map<string, number>();
+//       const crawlCounts = new Map<string, number>();
 
-      for (let i = 0; i < jobs.length; i++) {
-        const job = jobs[i];
-        // Use the same timestamp for all jobs in the batch.
-        // The job ID (which is a UUIDv7) provides ordering within the same timestamp
-        // since it includes a timestamp component and random suffix.
-        const createdAt = now;
-        const timesOutAt = job.crawlId ? undefined : createdAt + job.timeout;
+//       for (let i = 0; i < jobs.length; i++) {
+//         const job = jobs[i];
+//         // Use the same timestamp for all jobs in the batch.
+//         // The job ID (which is a UUIDv7) provides ordering within the same timestamp
+//         // since it includes a timestamp component and random suffix.
+//         const createdAt = now;
+//         const timesOutAt = job.crawlId ? undefined : createdAt + job.timeout;
 
-        const jobData: FDBQueueJob = {
-          id: job.id,
-          data: job.data,
-          priority: job.priority,
-          listenable: job.listenable,
-          listenChannelId: job.listenChannelId,
-          createdAt,
-          timesOutAt,
-          crawlId: job.crawlId,
-          teamId: job.teamId,
-        };
+//         const jobData: FDBQueueJob = {
+//           id: job.id,
+//           data: job.data,
+//           priority: job.priority,
+//           listenable: job.listenable,
+//           listenChannelId: job.listenChannelId,
+//           createdAt,
+//           timesOutAt,
+//           crawlId: job.crawlId,
+//           teamId: job.teamId,
+//         };
 
-        const queueKey = buildQueueKey(job.teamId, job.priority, createdAt, job.id);
-        tr.set(queueKey, Buffer.from(JSON.stringify(jobData)));
+//         const queueKey = buildQueueKey(job.teamId, job.priority, createdAt, job.id);
+//         tr.set(queueKey, Buffer.from(JSON.stringify(jobData)));
 
-        teamCounts.set(job.teamId, (teamCounts.get(job.teamId) ?? 0) + 1);
+//         teamCounts.set(job.teamId, (teamCounts.get(job.teamId) ?? 0) + 1);
 
-        // Add to TTL index if job has a timeout
-        if (timesOutAt) {
-          const ttlKey = buildTTLIndexKey(timesOutAt, job.teamId, job.id);
-          tr.set(ttlKey, Buffer.from(JSON.stringify({ priority: job.priority, createdAt, crawlId: job.crawlId })));
-        }
+//         // Add to TTL index if job has a timeout
+//         if (timesOutAt) {
+//           const ttlKey = buildTTLIndexKey(timesOutAt, job.teamId, job.id);
+//           tr.set(ttlKey, Buffer.from(JSON.stringify({ priority: job.priority, createdAt, crawlId: job.crawlId })));
+//         }
 
-        if (job.crawlId) {
-          const crawlIndexKey = buildCrawlIndexKey(job.crawlId, job.id);
-          tr.set(
-            crawlIndexKey,
-            Buffer.from(JSON.stringify({ teamId: job.teamId, priority: job.priority, createdAt }))
-          );
-          crawlCounts.set(job.crawlId, (crawlCounts.get(job.crawlId) ?? 0) + 1);
-        }
-      }
+//         if (job.crawlId) {
+//           const crawlIndexKey = buildCrawlIndexKey(job.crawlId, job.id);
+//           tr.set(
+//             crawlIndexKey,
+//             Buffer.from(JSON.stringify({ teamId: job.teamId, priority: job.priority, createdAt }))
+//           );
+//           crawlCounts.set(job.crawlId, (crawlCounts.get(job.crawlId) ?? 0) + 1);
+//         }
+//       }
 
-      // Batch increment counters
-      for (const [teamId, count] of teamCounts) {
-        tr.add(buildTeamCounterKey(teamId), encodeInt64LE(count));
-      }
-      for (const [crawlId, count] of crawlCounts) {
-        tr.add(buildCrawlCounterKey(crawlId), encodeInt64LE(count));
-      }
-    });
-    recordSuccess();
-  } catch (error) {
-    recordFailure(error);
-    throw error;
-  }
+//       // Batch increment counters
+//       for (const [teamId, count] of teamCounts) {
+//         tr.add(buildTeamCounterKey(teamId), encodeInt64LE(count));
+//       }
+//       for (const [crawlId, count] of crawlCounts) {
+//         tr.add(buildCrawlCounterKey(crawlId), encodeInt64LE(count));
+//       }
+//     });
+//     recordSuccess();
+//   } catch (error) {
+//     recordFailure(error);
+//     throw error;
+//   }
 
-  logger.debug("Pushed batch of jobs to FDB queue", { count: jobs.length });
-}
+//   logger.debug("Pushed batch of jobs to FDB queue", { count: jobs.length });
+// }
 
 /**
  * Atomically get and remove the first job for a team.
@@ -418,7 +424,7 @@ export async function pushJobs(
  */
 export async function popNextJob(
   teamId: string,
-  crawlConcurrencyChecker?: (crawlId: string) => Promise<boolean>
+  crawlConcurrencyChecker?: (crawlId: string) => Promise<boolean>,
 ): Promise<FDBQueueJob | null> {
   checkCircuit(); // Check circuit breaker before operation
   const database = getDb();
@@ -434,7 +440,7 @@ export async function popNextJob(
     if (attempt > 0) {
       const backoffMs = Math.min(50 * Math.pow(2, attempt - 1), 1000);
       const jitter = Math.floor(Math.random() * backoffMs);
-      await new Promise((resolve) => setTimeout(resolve, jitter));
+      await new Promise(resolve => setTimeout(resolve, jitter));
       // Clear concurrency cache on retry (state may have changed)
       concurrencyCache.clear();
     }
@@ -442,11 +448,15 @@ export async function popNextJob(
     // PHASE 1: Quick read-only transaction to get candidate jobs
     let candidateJobs: Array<{ key: Buffer; job: FDBQueueJob }>;
     try {
-      candidateJobs = await database.doTransaction(async (tr) => {
+      candidateJobs = await database.doTransaction(async tr => {
         tr.setOption(TransactionOptionCode.ReadYourWritesDisable); // Read-only optimization
 
         const startKey = fdb.tuple.pack([QUEUE_PREFIX, teamId]);
-        const endKey = fdb.tuple.pack([QUEUE_PREFIX, teamId, Buffer.from([0xff])]);
+        const endKey = fdb.tuple.pack([
+          QUEUE_PREFIX,
+          teamId,
+          Buffer.from([0xff]),
+        ]);
 
         const entries = await tr.getRangeAll(startKey, endKey, { limit: 50 });
 
@@ -476,15 +486,18 @@ export async function popNextJob(
 
     // Fetch crawl info in parallel
     await Promise.all(
-      Array.from(crawlIdsToFetch).map(async (crawlId) => {
+      Array.from(crawlIdsToFetch).map(async crawlId => {
         try {
           const sc = await getCrawl(crawlId);
           crawlCache.set(crawlId, sc);
         } catch (error) {
-          logger.warn("Failed to fetch crawl info, treating as no concurrency limit", { crawlId, error });
+          logger.warn(
+            "Failed to fetch crawl info, treating as no concurrency limit",
+            { crawlId, error },
+          );
           crawlCache.set(crawlId, null);
         }
-      })
+      }),
     );
 
     // Find the first valid job
@@ -507,7 +520,8 @@ export async function popNextJob(
 
         if (sc !== null && sc !== undefined) {
           const maxCrawlConcurrency =
-            typeof sc.crawlerOptions?.delay === "number" && sc.crawlerOptions.delay > 0
+            typeof sc.crawlerOptions?.delay === "number" &&
+            sc.crawlerOptions.delay > 0
               ? 1
               : (sc.maxConcurrency ?? null);
 
@@ -534,7 +548,7 @@ export async function popNextJob(
 
     // PHASE 3: Atomic removal transaction
     try {
-      const result = await database.doTransaction(async (tr) => {
+      const result = await database.doTransaction(async tr => {
         // Clean up expired jobs we found
         for (const { key, job } of expiredJobs) {
           // Verify job still exists before removing
@@ -587,7 +601,10 @@ export async function popNextJob(
         continue;
       }
 
-      if (result.type === "no_valid_job" && result.skippedDueToConcurrency === 0) {
+      if (
+        result.type === "no_valid_job" &&
+        result.skippedDueToConcurrency === 0
+      ) {
         // No valid jobs and none were blocked by concurrency - queue is exhausted
         return null;
       }
@@ -623,7 +640,7 @@ export async function getTeamQueueCount(teamId: string): Promise<number> {
  */
 export async function getTeamQueuedJobIds(
   teamId: string,
-  limit: number = 10000
+  limit: number = 10000,
 ): Promise<Set<string>> {
   const database = getDb();
   const jobIds = new Set<string>();
@@ -643,7 +660,9 @@ export async function getTeamQueuedJobIds(
       : startKey;
 
     const batchLimit = Math.min(BATCH_SIZE, effectiveLimit - totalRead);
-    const entries = await database.getRangeAll(rangeStart, endKey, { limit: batchLimit });
+    const entries = await database.getRangeAll(rangeStart, endKey, {
+      limit: batchLimit,
+    });
 
     if (entries.length === 0) break;
 
@@ -675,51 +694,51 @@ export async function getTeamQueuedJobIds(
  * Check if a specific job is in the queue for a crawl.
  * Uses the crawl index for O(1) lookup instead of scanning all team jobs.
  */
-export async function isJobInCrawlQueue(crawlId: string, jobId: string): Promise<boolean> {
-  const database = getDb();
-  const indexKey = buildCrawlIndexKey(crawlId, jobId);
-  const value = await database.get(indexKey);
-  return value !== null;
-}
+// async function isJobInCrawlQueue(crawlId: string, jobId: string): Promise<boolean> {
+//   const database = getDb();
+//   const indexKey = buildCrawlIndexKey(crawlId, jobId);
+//   const value = await database.get(indexKey);
+//   return value !== undefined;
+// }
 
 /**
  * Get queued job IDs for a specific crawl (not all team jobs).
  * More efficient than getTeamQueuedJobIds when you only need jobs for a specific crawl.
  */
-export async function getCrawlQueuedJobIds(crawlId: string): Promise<Set<string>> {
-  const database = getDb();
-  const jobIds = new Set<string>();
+// async function getCrawlQueuedJobIds(crawlId: string): Promise<Set<string>> {
+//   const database = getDb();
+//   const jobIds = new Set<string>();
 
-  const startKey = fdb.tuple.pack([CRAWL_INDEX_PREFIX, crawlId]);
-  const endKey = fdb.tuple.pack([CRAWL_INDEX_PREFIX, crawlId, Buffer.from([0xff])]);
+//   const startKey = fdb.tuple.pack([CRAWL_INDEX_PREFIX, crawlId]);
+//   const endKey = fdb.tuple.pack([CRAWL_INDEX_PREFIX, crawlId, Buffer.from([0xff])]);
 
-  // Use batched reads
-  const BATCH_SIZE = 1000;
-  let lastKey: Buffer | undefined;
+//   // Use batched reads
+//   const BATCH_SIZE = 1000;
+//   let lastKey: Buffer | undefined;
 
-  while (true) {
-    const rangeStart = lastKey
-      ? Buffer.concat([lastKey, Buffer.from([0x00])])
-      : startKey;
+//   while (true) {
+//     const rangeStart = lastKey
+//       ? Buffer.concat([lastKey, Buffer.from([0x00])])
+//       : startKey;
 
-    const entries = await database.getRangeAll(rangeStart, endKey, { limit: BATCH_SIZE });
+//     const entries = await database.getRangeAll(rangeStart, endKey, { limit: BATCH_SIZE });
 
-    if (entries.length === 0) break;
+//     if (entries.length === 0) break;
 
-    for (const [key] of entries) {
-      const parts = fdb.tuple.unpack(key);
-      // Key structure: (prefix, crawlId, jobId)
-      const jobId = parts[2] as string;
-      jobIds.add(jobId);
-    }
+//     for (const [key] of entries) {
+//       const parts = fdb.tuple.unpack(key);
+//       // Key structure: (prefix, crawlId, jobId)
+//       const jobId = parts[2] as string;
+//       jobIds.add(jobId);
+//     }
 
-    lastKey = entries[entries.length - 1][0];
+//     lastKey = entries[entries.length - 1][0];
 
-    if (entries.length < BATCH_SIZE) break;
-  }
+//     if (entries.length < BATCH_SIZE) break;
+//   }
 
-  return jobIds;
-}
+//   return jobIds;
+// }
 
 /**
  * Get count of queued jobs for a crawl
@@ -735,62 +754,62 @@ export async function getCrawlQueueCount(crawlId: string): Promise<number> {
  * Remove all jobs for a crawl (for cancellation)
  * Returns number of jobs removed
  */
-export async function removeJobsForCrawl(crawlId: string): Promise<number> {
-  checkCircuit(); // Check circuit breaker before operation
-  const database = getDb();
-  let removed = 0;
+// async function removeJobsForCrawl(crawlId: string): Promise<number> {
+//   checkCircuit(); // Check circuit breaker before operation
+//   const database = getDb();
+//   let removed = 0;
 
-  // FDB has a transaction size limit, so we need to batch this
-  while (true) {
-    let batchRemoved: number;
-    try {
-      batchRemoved = await database.doTransaction(async (tr) => {
-      const indexStart = fdb.tuple.pack([CRAWL_INDEX_PREFIX, crawlId]);
-      const indexEnd = fdb.tuple.pack([CRAWL_INDEX_PREFIX, crawlId, Buffer.from([0xff])]);
+//   // FDB has a transaction size limit, so we need to batch this
+//   while (true) {
+//     let batchRemoved: number;
+//     try {
+//       batchRemoved = await database.doTransaction(async (tr) => {
+//       const indexStart = fdb.tuple.pack([CRAWL_INDEX_PREFIX, crawlId]);
+//       const indexEnd = fdb.tuple.pack([CRAWL_INDEX_PREFIX, crawlId, Buffer.from([0xff])]);
 
-      const indexEntries = await tr.getRangeAll(indexStart, indexEnd, { limit: 100 });
-      let count = 0;
+//       const indexEntries = await tr.getRangeAll(indexStart, indexEnd, { limit: 100 });
+//       let count = 0;
 
-      for (const [indexKey, indexValue] of indexEntries) {
-        const { teamId, priority, createdAt } = JSON.parse(indexValue.toString());
-        const parts = fdb.tuple.unpack(indexKey);
-        const jobId = parts[2] as string;
+//       for (const [indexKey, indexValue] of indexEntries) {
+//         const { teamId, priority, createdAt } = JSON.parse(indexValue.toString());
+//         const parts = fdb.tuple.unpack(indexKey);
+//         const jobId = parts[2] as string;
 
-        // Remove from queue
-        const queueKey = buildQueueKey(teamId, priority, createdAt, jobId);
-        tr.clear(queueKey);
+//         // Remove from queue
+//         const queueKey = buildQueueKey(teamId, priority, createdAt, jobId);
+//         tr.clear(queueKey);
 
-        // Remove from index
-        tr.clear(indexKey);
+//         // Remove from index
+//         tr.clear(indexKey);
 
-        // Decrement counters
-        tr.add(buildTeamCounterKey(teamId), encodeInt64LE(-1));
-        tr.add(buildCrawlCounterKey(crawlId), encodeInt64LE(-1));
+//         // Decrement counters
+//         tr.add(buildTeamCounterKey(teamId), encodeInt64LE(-1));
+//         tr.add(buildCrawlCounterKey(crawlId), encodeInt64LE(-1));
 
-        count++;
-      }
+//         count++;
+//       }
 
-      return count;
-    });
-      recordSuccess();
-    } catch (error) {
-      recordFailure(error);
-      throw error;
-    }
+//       return count;
+//     });
+//       recordSuccess();
+//     } catch (error) {
+//       recordFailure(error);
+//       throw error;
+//     }
 
-    removed += batchRemoved;
+//     removed += batchRemoved;
 
-    if (batchRemoved < 100) {
-      break; // No more jobs
-    }
-  }
+//     if (batchRemoved < 100) {
+//       break; // No more jobs
+//     }
+//   }
 
-  if (removed > 0) {
-    logger.info("Removed jobs for cancelled crawl", { crawlId, removed });
-  }
+//   if (removed > 0) {
+//     logger.info("Removed jobs for cancelled crawl", { crawlId, removed });
+//   }
 
-  return removed;
-}
+//   return removed;
+// }
 
 // ============= Active Job Tracking =============
 
@@ -800,14 +819,14 @@ export async function removeJobsForCrawl(crawlId: string): Promise<number> {
 export async function pushActiveJob(
   teamId: string,
   jobId: string,
-  timeout: number
+  timeout: number,
 ): Promise<void> {
   checkCircuit(); // Check circuit breaker before operation
   const database = getDb();
   const expiresAt = Date.now() + timeout;
 
   try {
-    await database.doTransaction(async (tr) => {
+    await database.doTransaction(async tr => {
       const key = buildActiveKey(teamId, jobId);
       tr.set(key, encodeInt64BE(expiresAt));
       // Increment active counter
@@ -823,12 +842,15 @@ export async function pushActiveJob(
 /**
  * Remove an active job (team level)
  */
-export async function removeActiveJob(teamId: string, jobId: string): Promise<void> {
+export async function removeActiveJob(
+  teamId: string,
+  jobId: string,
+): Promise<void> {
   checkCircuit(); // Check circuit breaker before operation
   const database = getDb();
 
   try {
-    await database.doTransaction(async (tr) => {
+    await database.doTransaction(async tr => {
       const key = buildActiveKey(teamId, jobId);
       // Only decrement if key exists
       const exists = await tr.get(key);
@@ -888,14 +910,14 @@ export async function getActiveJobs(teamId: string): Promise<string[]> {
 export async function pushCrawlActiveJob(
   crawlId: string,
   jobId: string,
-  timeout: number
+  timeout: number,
 ): Promise<void> {
   checkCircuit(); // Check circuit breaker before operation
   const database = getDb();
   const expiresAt = Date.now() + timeout;
 
   try {
-    await database.doTransaction(async (tr) => {
+    await database.doTransaction(async tr => {
       const key = buildActiveCrawlKey(crawlId, jobId);
       tr.set(key, encodeInt64BE(expiresAt));
       tr.add(buildActiveCrawlCounterKey(crawlId), encodeInt64LE(1));
@@ -910,12 +932,15 @@ export async function pushCrawlActiveJob(
 /**
  * Remove an active job (crawl level)
  */
-export async function removeCrawlActiveJob(crawlId: string, jobId: string): Promise<void> {
+export async function removeCrawlActiveJob(
+  crawlId: string,
+  jobId: string,
+): Promise<void> {
   checkCircuit(); // Check circuit breaker before operation
   const database = getDb();
 
   try {
-    await database.doTransaction(async (tr) => {
+    await database.doTransaction(async tr => {
       const key = buildActiveCrawlKey(crawlId, jobId);
       const exists = await tr.get(key);
       if (exists) {
@@ -934,13 +959,13 @@ export async function removeCrawlActiveJob(crawlId: string, jobId: string): Prom
  * Get active job count for a crawl.
  * Uses an atomic counter for O(1) performance.
  */
-export async function getCrawlActiveJobCount(crawlId: string): Promise<number> {
-  const database = getDb();
-  const counterKey = buildActiveCrawlCounterKey(crawlId);
-  const value = await database.get(counterKey);
-  const count = value ? decodeInt64LE(value) : 0;
-  return Math.max(0, count);
-}
+// async function getCrawlActiveJobCount(crawlId: string): Promise<number> {
+//   const database = getDb();
+//   const counterKey = buildActiveCrawlCounterKey(crawlId);
+//   const value = await database.get(counterKey);
+//   const count = value ? decodeInt64LE(value) : 0;
+//   return Math.max(0, count);
+// }
 
 /**
  * Get active job IDs for a crawl (non-expired only)
@@ -951,7 +976,11 @@ export async function getCrawlActiveJobs(crawlId: string): Promise<string[]> {
   const now = Date.now();
 
   const startKey = fdb.tuple.pack([ACTIVE_CRAWL_PREFIX, crawlId]);
-  const endKey = fdb.tuple.pack([ACTIVE_CRAWL_PREFIX, crawlId, Buffer.from([0xff])]);
+  const endKey = fdb.tuple.pack([
+    ACTIVE_CRAWL_PREFIX,
+    crawlId,
+    Buffer.from([0xff]),
+  ]);
 
   const jobs: string[] = [];
   const entries = await database.getRangeAll(startKey, endKey);
@@ -988,7 +1017,7 @@ export async function cleanExpiredJobs(): Promise<number> {
   // Only scan entries where expires_at < now
   while (batches < MAX_BATCHES) {
     batches++;
-    const batchCleaned = await database.doTransaction(async (tr) => {
+    const batchCleaned = await database.doTransaction(async tr => {
       // Scan TTL index from beginning up to current time
       const startKey = fdb.tuple.pack([TTL_INDEX_PREFIX]);
       const endKey = fdb.tuple.pack([TTL_INDEX_PREFIX, now]);
@@ -1005,7 +1034,9 @@ export async function cleanExpiredJobs(): Promise<number> {
         const jobId = parts[3] as string;
 
         // Parse TTL value to get priority, createdAt, crawlId
-        const { priority, createdAt, crawlId } = JSON.parse(ttlValue.toString());
+        const { priority, createdAt, crawlId } = JSON.parse(
+          ttlValue.toString(),
+        );
 
         // Clear the main queue entry
         const queueKey = buildQueueKey(teamId, priority, createdAt, jobId);
@@ -1037,7 +1068,10 @@ export async function cleanExpiredJobs(): Promise<number> {
   }
 
   if (cleaned > 0) {
-    logger.info("Cleaned expired jobs from FDB queue via TTL index", { cleaned, batches });
+    logger.info("Cleaned expired jobs from FDB queue via TTL index", {
+      cleaned,
+      batches,
+    });
   }
 
   return cleaned;
@@ -1053,7 +1087,7 @@ export async function cleanExpiredActiveJobs(): Promise<number> {
 
   // Clean team active jobs
   while (true) {
-    const batchCleaned = await database.doTransaction(async (tr) => {
+    const batchCleaned = await database.doTransaction(async tr => {
       const startKey = fdb.tuple.pack([ACTIVE_PREFIX]);
       const endKey = fdb.tuple.pack([ACTIVE_PREFIX, Buffer.from([0xff])]);
 
@@ -1083,7 +1117,7 @@ export async function cleanExpiredActiveJobs(): Promise<number> {
 
   // Clean crawl active jobs
   while (true) {
-    const batchCleaned = await database.doTransaction(async (tr) => {
+    const batchCleaned = await database.doTransaction(async tr => {
       const startKey = fdb.tuple.pack([ACTIVE_CRAWL_PREFIX]);
       const endKey = fdb.tuple.pack([ACTIVE_CRAWL_PREFIX, Buffer.from([0xff])]);
 
@@ -1126,14 +1160,23 @@ export async function cleanExpiredActiveJobs(): Promise<number> {
  */
 export async function sampleTeamCounters(
   limit: number,
-  afterTeamId?: string
+  afterTeamId?: string,
 ): Promise<string[]> {
   const database = getDb();
 
   const startKey = afterTeamId
-    ? fdb.tuple.pack([COUNTER_PREFIX, COUNTER_TEAM, afterTeamId, Buffer.from([0x00])])
+    ? fdb.tuple.pack([
+        COUNTER_PREFIX,
+        COUNTER_TEAM,
+        afterTeamId,
+        Buffer.from([0x00]),
+      ])
     : fdb.tuple.pack([COUNTER_PREFIX, COUNTER_TEAM]);
-  const endKey = fdb.tuple.pack([COUNTER_PREFIX, COUNTER_TEAM, Buffer.from([0xff])]);
+  const endKey = fdb.tuple.pack([
+    COUNTER_PREFIX,
+    COUNTER_TEAM,
+    Buffer.from([0xff]),
+  ]);
 
   const entries = await database.getRangeAll(startKey, endKey, { limit });
   const teamIds: string[] = [];
@@ -1153,14 +1196,23 @@ export async function sampleTeamCounters(
  */
 export async function sampleCrawlCounters(
   limit: number,
-  afterCrawlId?: string
+  afterCrawlId?: string,
 ): Promise<string[]> {
   const database = getDb();
 
   const startKey = afterCrawlId
-    ? fdb.tuple.pack([COUNTER_PREFIX, COUNTER_CRAWL, afterCrawlId, Buffer.from([0x00])])
+    ? fdb.tuple.pack([
+        COUNTER_PREFIX,
+        COUNTER_CRAWL,
+        afterCrawlId,
+        Buffer.from([0x00]),
+      ])
     : fdb.tuple.pack([COUNTER_PREFIX, COUNTER_CRAWL]);
-  const endKey = fdb.tuple.pack([COUNTER_PREFIX, COUNTER_CRAWL, Buffer.from([0xff])]);
+  const endKey = fdb.tuple.pack([
+    COUNTER_PREFIX,
+    COUNTER_CRAWL,
+    Buffer.from([0xff]),
+  ]);
 
   const entries = await database.getRangeAll(startKey, endKey, { limit });
   const crawlIds: string[] = [];
@@ -1178,7 +1230,9 @@ export async function sampleCrawlCounters(
  * Reconcile a team's queue counter by counting actual jobs and fixing discrepancies.
  * Returns the correction made (positive if counter was too low, negative if too high).
  */
-export async function reconcileTeamQueueCounter(teamId: string): Promise<number> {
+export async function reconcileTeamQueueCounter(
+  teamId: string,
+): Promise<number> {
   const database = getDb();
 
   // Count actual jobs for this team
@@ -1194,7 +1248,9 @@ export async function reconcileTeamQueueCounter(teamId: string): Promise<number>
       ? Buffer.concat([lastKey, Buffer.from([0x00])])
       : startKey;
 
-    const entries = await database.getRangeAll(rangeStart, endKey, { limit: 1000 });
+    const entries = await database.getRangeAll(rangeStart, endKey, {
+      limit: 1000,
+    });
     actualCount += entries.length;
 
     if (entries.length < 1000) break;
@@ -1214,7 +1270,7 @@ export async function reconcileTeamQueueCounter(teamId: string): Promise<number>
   const correction = actualCount - currentCount;
 
   // Set the counter to the correct value
-  await database.doTransaction(async (tr) => {
+  await database.doTransaction(async tr => {
     tr.set(counterKey, encodeInt64LE(actualCount));
   });
 
@@ -1232,12 +1288,18 @@ export async function reconcileTeamQueueCounter(teamId: string): Promise<number>
  * Reconcile a crawl's queue counter by counting actual jobs and fixing discrepancies.
  * Returns the correction made.
  */
-export async function reconcileCrawlQueueCounter(crawlId: string): Promise<number> {
+export async function reconcileCrawlQueueCounter(
+  crawlId: string,
+): Promise<number> {
   const database = getDb();
 
   // Count actual jobs for this crawl using the crawl index
   const startKey = fdb.tuple.pack([CRAWL_INDEX_PREFIX, crawlId]);
-  const endKey = fdb.tuple.pack([CRAWL_INDEX_PREFIX, crawlId, Buffer.from([0xff])]);
+  const endKey = fdb.tuple.pack([
+    CRAWL_INDEX_PREFIX,
+    crawlId,
+    Buffer.from([0xff]),
+  ]);
 
   // Count in batches
   let actualCount = 0;
@@ -1248,7 +1310,9 @@ export async function reconcileCrawlQueueCounter(crawlId: string): Promise<numbe
       ? Buffer.concat([lastKey, Buffer.from([0x00])])
       : startKey;
 
-    const entries = await database.getRangeAll(rangeStart, endKey, { limit: 1000 });
+    const entries = await database.getRangeAll(rangeStart, endKey, {
+      limit: 1000,
+    });
     actualCount += entries.length;
 
     if (entries.length < 1000) break;
@@ -1268,7 +1332,7 @@ export async function reconcileCrawlQueueCounter(crawlId: string): Promise<numbe
   const correction = actualCount - currentCount;
 
   // Set the counter to the correct value
-  await database.doTransaction(async (tr) => {
+  await database.doTransaction(async tr => {
     tr.set(counterKey, encodeInt64LE(actualCount));
   });
 
@@ -1286,7 +1350,9 @@ export async function reconcileCrawlQueueCounter(crawlId: string): Promise<numbe
  * Reconcile a team's active job counter.
  * Returns the correction made.
  */
-export async function reconcileTeamActiveCounter(teamId: string): Promise<number> {
+export async function reconcileTeamActiveCounter(
+  teamId: string,
+): Promise<number> {
   const database = getDb();
   const now = Date.now();
 
@@ -1315,7 +1381,7 @@ export async function reconcileTeamActiveCounter(teamId: string): Promise<number
 
   const correction = actualCount - currentCount;
 
-  await database.doTransaction(async (tr) => {
+  await database.doTransaction(async tr => {
     tr.set(counterKey, encodeInt64LE(actualCount));
   });
 
@@ -1333,13 +1399,19 @@ export async function reconcileTeamActiveCounter(teamId: string): Promise<number
  * Reconcile a crawl's active job counter.
  * Returns the correction made.
  */
-export async function reconcileCrawlActiveCounter(crawlId: string): Promise<number> {
+export async function reconcileCrawlActiveCounter(
+  crawlId: string,
+): Promise<number> {
   const database = getDb();
   const now = Date.now();
 
   // Count actual non-expired active jobs for this crawl
   const startKey = fdb.tuple.pack([ACTIVE_CRAWL_PREFIX, crawlId]);
-  const endKey = fdb.tuple.pack([ACTIVE_CRAWL_PREFIX, crawlId, Buffer.from([0xff])]);
+  const endKey = fdb.tuple.pack([
+    ACTIVE_CRAWL_PREFIX,
+    crawlId,
+    Buffer.from([0xff]),
+  ]);
 
   let actualCount = 0;
   const entries = await database.getRangeAll(startKey, endKey);
@@ -1362,7 +1434,7 @@ export async function reconcileCrawlActiveCounter(crawlId: string): Promise<numb
 
   const correction = actualCount - currentCount;
 
-  await database.doTransaction(async (tr) => {
+  await database.doTransaction(async tr => {
     tr.set(counterKey, encodeInt64LE(actualCount));
   });
 
@@ -1394,12 +1466,18 @@ export async function cleanStaleCounters(): Promise<number> {
 
     for (const teamId of teamIds) {
       const startKey = fdb.tuple.pack([QUEUE_PREFIX, teamId]);
-      const endKey = fdb.tuple.pack([QUEUE_PREFIX, teamId, Buffer.from([0xff])]);
+      const endKey = fdb.tuple.pack([
+        QUEUE_PREFIX,
+        teamId,
+        Buffer.from([0xff]),
+      ]);
 
-      const entries = await database.getRangeAll(startKey, endKey, { limit: 1 });
+      const entries = await database.getRangeAll(startKey, endKey, {
+        limit: 1,
+      });
       if (entries.length === 0) {
         // No jobs for this team, clean up the counter
-        await database.doTransaction(async (tr) => {
+        await database.doTransaction(async tr => {
           tr.clear(buildTeamCounterKey(teamId));
         });
         cleaned++;
@@ -1418,12 +1496,18 @@ export async function cleanStaleCounters(): Promise<number> {
 
     for (const crawlId of crawlIds) {
       const startKey = fdb.tuple.pack([CRAWL_INDEX_PREFIX, crawlId]);
-      const endKey = fdb.tuple.pack([CRAWL_INDEX_PREFIX, crawlId, Buffer.from([0xff])]);
+      const endKey = fdb.tuple.pack([
+        CRAWL_INDEX_PREFIX,
+        crawlId,
+        Buffer.from([0xff]),
+      ]);
 
-      const entries = await database.getRangeAll(startKey, endKey, { limit: 1 });
+      const entries = await database.getRangeAll(startKey, endKey, {
+        limit: 1,
+      });
       if (entries.length === 0) {
         // No jobs for this crawl, clean up the counter
-        await database.doTransaction(async (tr) => {
+        await database.doTransaction(async tr => {
           tr.clear(buildCrawlCounterKey(crawlId));
         });
         cleaned++;
