@@ -2,10 +2,12 @@ import { parseArgs } from './config.js';
 import { MetricsCollector } from './metrics.js';
 import { FDBQueueClient } from './http-client.js';
 import { TeamSimulator } from './team-simulator.js';
+import { CorrectnessChecker } from './correctness-checker.js';
 import {
   printHeader,
   printLiveStats,
   printFinalReport,
+  printCorrectnessReport,
   printError,
   printProgress,
 } from './reporter.js';
@@ -54,14 +56,20 @@ async function runSimulation(): Promise<void> {
     process.exit(0);
   }
 
+  // Initialize correctness checker if enabled
+  const correctnessChecker = config.correctnessChecking
+    ? new CorrectnessChecker()
+    : undefined;
+
   // Initialize components
   const metrics = new MetricsCollector(config.metricsBufferSize);
   const client = new FDBQueueClient({
     baseUrl: config.serviceUrl,
     metrics,
     verbose: config.verbose,
+    correctnessChecker,
   });
-  const simulator = new TeamSimulator(config);
+  const simulator = new TeamSimulator(config, correctnessChecker);
   const semaphore = new Semaphore(config.workerConcurrency);
 
   // Print configuration
@@ -173,6 +181,13 @@ async function runSimulation(): Promise<void> {
 
   // Print final report
   printFinalReport(metrics, simulator, config);
+
+  // Run correctness verification and print report
+  if (correctnessChecker) {
+    printProgress('Running correctness verification...');
+    correctnessChecker.runEndOfTestVerification();
+    printCorrectnessReport(correctnessChecker);
+  }
 }
 
 // Run the simulation

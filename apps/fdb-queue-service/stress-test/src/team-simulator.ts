@@ -1,14 +1,17 @@
 import type { TeamState, TeamTier, ActiveJob, StressTestConfig, TierStats } from './types.js';
 import type { FDBQueueClient } from './http-client.js';
+import type { CorrectnessChecker } from './correctness-checker.js';
 
 export class TeamSimulator {
   private teams: Map<string, TeamState> = new Map();
   private tierTeams: Map<string, TeamState[]> = new Map();
   private config: StressTestConfig;
   private jobTimeout: number = 600_000; // 10 minutes
+  private correctnessChecker?: CorrectnessChecker;
 
-  constructor(config: StressTestConfig) {
+  constructor(config: StressTestConfig, correctnessChecker?: CorrectnessChecker) {
     this.config = config;
+    this.correctnessChecker = correctnessChecker;
     this.initializeTeams();
   }
 
@@ -159,6 +162,9 @@ export class TeamSimulator {
     if (success) {
       team.activeJobs.delete(activeJob.jobId);
       team.completedJobs++;
+
+      // Record completion for correctness tracking
+      this.correctnessChecker?.recordComplete(activeJob.jobId);
     }
 
     return success;

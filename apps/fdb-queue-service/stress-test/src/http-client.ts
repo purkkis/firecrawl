@@ -9,11 +9,13 @@ import type {
   OperationType,
 } from './types.js';
 import type { MetricsCollector } from './metrics.js';
+import type { CorrectnessChecker } from './correctness-checker.js';
 
 export interface HttpClientOptions {
   baseUrl: string;
   metrics: MetricsCollector;
   verbose: boolean;
+  correctnessChecker?: CorrectnessChecker;
 }
 
 export class FDBQueueClient {
@@ -21,11 +23,13 @@ export class FDBQueueClient {
   private metrics: MetricsCollector;
   private verbose: boolean;
   private workerId: string;
+  private correctnessChecker?: CorrectnessChecker;
 
   constructor(options: HttpClientOptions) {
     this.baseUrl = options.baseUrl;
     this.metrics = options.metrics;
     this.verbose = options.verbose;
+    this.correctnessChecker = options.correctnessChecker;
     this.workerId = `stress-${process.pid}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
   }
 
@@ -110,11 +114,22 @@ export class FDBQueueClient {
     timeout: number,
     crawlId?: string,
   ): Promise<boolean> {
+    const dataTimestamp = Date.now();
+
+    // Record push attempt for correctness tracking
+    const pushRecord = this.correctnessChecker?.recordPush(
+      jobId,
+      teamId,
+      priority,
+      dataTimestamp,
+      crawlId,
+    );
+
     const body: PushJobRequest = {
       teamId,
       job: {
         id: jobId,
-        data: { stress: true, timestamp: Date.now() },
+        data: { stress: true, timestamp: dataTimestamp },
         priority,
         listenable: false,
       },
@@ -123,6 +138,12 @@ export class FDBQueueClient {
     };
 
     const result = await this.request<void>('POST', '/queue/push', 'push', body);
+
+    // Confirm push on success
+    if (result.success && pushRecord) {
+      this.correctnessChecker?.confirmPush(pushRecord);
+    }
+
     return result.success;
   }
 
@@ -138,6 +159,11 @@ export class FDBQueueClient {
       'pop',
       body,
     );
+
+    // Validate the claimed job for correctness
+    if (result.data && result.data.job) {
+      this.correctnessChecker?.recordClaim(result.data, teamId);
+    }
 
     return result.data;
   }

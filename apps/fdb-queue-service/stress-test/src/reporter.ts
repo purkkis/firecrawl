@@ -3,9 +3,11 @@ import type {
   OperationType,
   FinalReport,
   TierStats,
+  ViolationType,
 } from './types.js';
 import type { MetricsCollector } from './metrics.js';
 import type { TeamSimulator } from './team-simulator.js';
+import type { CorrectnessChecker } from './correctness-checker.js';
 import { getTotalTeams, getExpectedOpsPerSecond } from './config.js';
 
 const OPERATIONS_ORDER: OperationType[] = [
@@ -312,4 +314,82 @@ export function printError(message: string, error?: unknown): void {
 
 export function printProgress(message: string): void {
   console.log(`[*] ${message}`);
+}
+
+export function printCorrectnessReport(checker: CorrectnessChecker): void {
+  const summary = checker.getSummary();
+
+  console.log('');
+  console.log('='.repeat(70));
+  console.log('  Correctness Verification Results');
+  console.log('='.repeat(70));
+  console.log('');
+
+  // Status
+  const status = summary.isPassing ? 'PASS' : 'FAIL';
+  console.log(`Status: ${status}`);
+  console.log('');
+
+  // Job lifecycle counters
+  console.log('Job Lifecycle:');
+  console.log(`  Total Pushed:    ${formatNumber(summary.totalPushed)}`);
+  console.log(`  Total Claimed:   ${formatNumber(summary.totalClaimed)}`);
+  console.log(`  Total Completed: ${formatNumber(summary.totalCompleted)}`);
+  console.log('');
+
+  // Violations
+  if (!summary.isPassing) {
+    console.log('Violations Found:');
+
+    const violationTypes: ViolationType[] = [
+      'duplicate_claim',
+      'orphan_claim',
+      'wrong_team',
+      'priority_mismatch',
+      'data_corruption',
+      'crawl_id_mismatch',
+      'lost_job',
+      'incomplete_job',
+    ];
+
+    const violationLabels: Record<ViolationType, string> = {
+      duplicate_claim: 'Duplicate Claims',
+      orphan_claim: 'Orphan Claims',
+      wrong_team: 'Wrong Team Claims',
+      priority_mismatch: 'Priority Mismatches',
+      data_corruption: 'Data Corruptions',
+      crawl_id_mismatch: 'CrawlId Mismatches',
+      lost_job: 'Lost Jobs',
+      incomplete_job: 'Incomplete Jobs',
+    };
+
+    for (const type of violationTypes) {
+      const count = summary.violationCounts[type];
+      if (count > 0) {
+        console.log(`  ${padRight(violationLabels[type] + ':', 22)} ${formatNumber(count)}`);
+      }
+    }
+
+    console.log(`  ${'-'.repeat(30)}`);
+    console.log(`  ${padRight('Total:', 22)} ${formatNumber(summary.totalViolations)}`);
+    console.log('');
+
+    // Sample violations
+    const samples = checker.getRecentViolations(10);
+    if (samples.length > 0) {
+      console.log('Sample Violations (last 10):');
+      console.log('-'.repeat(70));
+      for (const v of samples) {
+        console.log(`  [${v.type}] Job: ${v.jobId}`);
+        console.log(`    ${v.details}`);
+        if (v.expected !== undefined) {
+          console.log(`    Expected: ${JSON.stringify(v.expected)}`);
+          console.log(`    Actual:   ${JSON.stringify(v.actual)}`);
+        }
+      }
+      console.log('-'.repeat(70));
+    }
+  }
+
+  console.log('');
 }

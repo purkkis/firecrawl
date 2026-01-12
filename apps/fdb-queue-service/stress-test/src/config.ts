@@ -19,6 +19,7 @@ export const DEFAULT_CONFIG: StressTestConfig = {
   metricsBufferSize: 100_000, // Reduced from 1M to save memory
   reportIntervalSeconds: 10,
   verbose: false,
+  correctnessChecking: true,
 };
 
 function printUsage(): void {
@@ -35,6 +36,8 @@ Options:
   --buffer-size <n>     Metrics buffer size per operation (default: 100000)
   --report-interval <s> Live report interval in seconds (default: 10)
   --verbose             Enable verbose logging
+  --correctness         Enable correctness checking (default: enabled)
+  --no-correctness      Disable correctness checking
   --help                Show this help message
 
 Team Tier Options (use to scale team counts):
@@ -132,6 +135,14 @@ export function parseArgs(args: string[]): StressTestConfig | null {
 
       case '--verbose':
         config.verbose = true;
+        break;
+
+      case '--correctness':
+        config.correctnessChecking = true;
+        break;
+
+      case '--no-correctness':
+        config.correctnessChecking = false;
         break;
 
       default:

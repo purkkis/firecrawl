@@ -113,6 +113,7 @@ export interface StressTestConfig {
   metricsBufferSize: number;
   reportIntervalSeconds: number;
   verbose: boolean;
+  correctnessChecking: boolean;
 }
 
 // Job data structure matching the Rust service
@@ -175,4 +176,59 @@ export interface CompleteJobRequest {
 // Release job request
 export interface ReleaseJobRequest {
   jobId: string;
+}
+
+// === Correctness Checking Types ===
+
+// Record of a pushed job for later validation
+export interface PushedJobRecord {
+  jobId: string;
+  teamId: string;
+  priority: number;
+  crawlId?: string;
+  dataTimestamp: number; // The timestamp inside job.data for validation
+}
+
+// State transitions for job lifecycle tracking
+export type JobState = 'pushed' | 'claimed' | 'completed';
+
+// Record of the current state of a job
+export interface JobLifecycleRecord {
+  jobId: string;
+  state: JobState;
+  pushedRecord: PushedJobRecord;
+  claimTimestamp?: number;
+  completeTimestamp?: number;
+}
+
+// Types of correctness violations
+export type ViolationType =
+  | 'duplicate_claim'     // Same job claimed twice
+  | 'orphan_claim'        // Claimed a job that was never pushed
+  | 'wrong_team'          // Job popped by different team than it was pushed for
+  | 'priority_mismatch'   // Priority in claimed job != priority pushed
+  | 'data_corruption'     // Data payload doesn't match expected structure
+  | 'crawl_id_mismatch'   // CrawlId changed between push and pop
+  | 'lost_job'            // Pushed but never claimed or completed by end
+  | 'incomplete_job';     // Claimed but never completed by end
+
+// Individual correctness violation record
+export interface CorrectnessViolation {
+  type: ViolationType;
+  timestamp: number;
+  jobId: string;
+  teamId?: string;
+  details: string;
+  expected?: unknown;
+  actual?: unknown;
+}
+
+// Summary statistics for correctness checking
+export interface CorrectnessSummary {
+  totalPushed: number;
+  totalClaimed: number;
+  totalCompleted: number;
+  violationCounts: Record<ViolationType, number>;
+  totalViolations: number;
+  isPassing: boolean;
 }
