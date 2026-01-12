@@ -31,7 +31,7 @@ RUN apt-get update && apt-get install -y \
 # The foundationdb npm package needs libfdb_c.so to build its native Node.js binding
 RUN ARCH=$(dpkg --print-architecture) && \
     if [ "$ARCH" = "amd64" ]; then \
-      FDB_ARCH="x86_64"; \
+      FDB_ARCH="amd64"; \
     elif [ "$ARCH" = "arm64" ]; then \
       FDB_ARCH="aarch64"; \
     else \
@@ -82,7 +82,7 @@ RUN apt-get update && apt-get install -y \
 # Install FoundationDB client library (7.3.x for ARM64/AMD64)
 RUN ARCH=$(dpkg --print-architecture) && \
     if [ "$ARCH" = "amd64" ]; then \
-      FDB_ARCH="x86_64"; \
+      FDB_ARCH="amd64"; \
     elif [ "$ARCH" = "arm64" ]; then \
       FDB_ARCH="aarch64"; \
     else \
