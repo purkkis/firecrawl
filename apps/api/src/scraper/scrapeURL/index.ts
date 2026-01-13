@@ -1091,6 +1091,7 @@ export async function scrapeURL(
                 meta.logger.debug(
                   "PDF was blocked by anti-bot, skipping as it was already attempted",
                 );
+                throw error;
               }
             }
           } else if (
@@ -1116,6 +1117,7 @@ export async function scrapeURL(
                 meta.logger.debug(
                   "Document was blocked by anti-bot, skipping as it was already attempted",
                 );
+                throw error;
               }
             }
           } else {

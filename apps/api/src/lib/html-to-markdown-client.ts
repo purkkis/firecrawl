@@ -22,6 +22,7 @@ interface ConvertResponse {
 
 interface ErrorResponse {
   error: string;
+  details?: string;
   success: boolean;
 }
 
@@ -51,14 +52,21 @@ export async function convertHTMLToMarkdownWithHttpService(
   try {
     const request: ConvertRequest = { html };
 
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    // Add request ID header if available
+    if (requestId) {
+      headers["X-Request-ID"] = requestId;
+    }
+
     const response = await axios.post<ConvertResponse>(
       `${url}/convert`,
       request,
       {
         timeout: 60_000,
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
       },
     );
 
@@ -72,6 +80,7 @@ export async function convertHTMLToMarkdownWithHttpService(
       duration_ms: duration,
       input_size: html.length,
       output_size: response.data.markdown.length,
+      ...(requestId ? { request_id: requestId } : {}),
     });
 
     return response.data.markdown;
@@ -83,10 +92,12 @@ export async function convertHTMLToMarkdownWithHttpService(
 
       const errorMessage =
         axiosError.response?.data?.error || axiosError.message;
+      const errorDetails = axiosError.response?.data?.details;
       const statusCode = axiosError.response?.status;
 
       contextLogger.error("HTML to Markdown conversion failed", {
         error: errorMessage,
+        details: errorDetails,
         statusCode,
         duration_ms: duration,
         serviceUrl: url,
@@ -102,11 +113,17 @@ export async function convertHTMLToMarkdownWithHttpService(
         extra: {
           serviceUrl: url,
           errorMessage,
+          errorDetails,
           inputSize: html.length,
         },
       });
 
-      throw new Error(`HTML to Markdown conversion failed: ${errorMessage}`);
+      // Include details in error message if available
+      const fullErrorMessage = errorDetails
+        ? `HTML to Markdown conversion failed: ${errorMessage} - ${errorDetails}`
+        : `HTML to Markdown conversion failed: ${errorMessage}`;
+
+      throw new Error(fullErrorMessage);
     } else {
       contextLogger.error(
         "Unexpected error during HTML to Markdown conversion",
