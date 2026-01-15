@@ -5,6 +5,7 @@ import { supabase_service } from "../supabase";
 import * as Sentry from "@sentry/node";
 import { withAuth } from "../../lib/withAuth";
 import { setCachedACUC, setCachedACUCTeam } from "../../controllers/auth";
+import { incrementDailyUsage } from "./daily_limit";
 
 // Configuration constants
 const BATCH_KEY = "billing_batch";
@@ -224,6 +225,9 @@ export async function queueBillingOperation(
         credits,
       },
     );
+
+    // Track daily usage for daily credit limit feature
+    await incrementDailyUsage(team_id, credits);
 
     // Start batch processing if not already started
     startBillingBatchProcessing();

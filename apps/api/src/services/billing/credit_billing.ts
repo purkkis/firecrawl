@@ -9,6 +9,7 @@ import { autoCharge } from "./auto_charge";
 import { getValue, setValue } from "../redis";
 import { queueBillingOperation } from "./batch_billing";
 import type { Logger } from "winston";
+import { checkDailyLimit } from "./daily_limit";
 
 /**
  * If you do not know the subscription_id in the current context, pass subscription_id as undefined.
@@ -84,6 +85,26 @@ async function supaCheckTeamCredits(
       success: true,
       message: "Credit checks bypassed",
       remainingCredits: Infinity,
+      chunk,
+    };
+  }
+
+  // Check daily credit limit
+  const dailyLimitCheck = await checkDailyLimit(team_id, credits);
+  if (!dailyLimitCheck.success) {
+    logger.warn("Daily credit limit exceeded", {
+      team_id,
+      teamId: team_id,
+      creditsRequested: credits,
+      dailyUsed: dailyLimitCheck.dailyUsed,
+      dailyLimit: dailyLimitCheck.dailyLimit,
+      dailyRemaining: dailyLimitCheck.dailyRemaining,
+      resetsAt: dailyLimitCheck.resetsAt,
+    });
+    return {
+      success: false,
+      message: dailyLimitCheck.message ?? "Daily credit limit exceeded",
+      remainingCredits: chunk.remaining_credits,
       chunk,
     };
   }

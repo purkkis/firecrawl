@@ -15,6 +15,10 @@ import { ongoingCrawlsController } from "../controllers/v2/crawl-ongoing";
 import { scrapeStatusController } from "../controllers/v2/scrape-status";
 import { creditUsageController } from "../controllers/v2/credit-usage";
 import { tokenUsageController } from "../controllers/v2/token-usage";
+import {
+  dailyLimitController,
+  updateDailyLimitController,
+} from "../controllers/v2/daily-limit";
 import { crawlCancelController } from "../controllers/v2/crawl-cancel";
 import { concurrencyCheckController } from "../controllers/v2/concurrency-check";
 import { crawlStatusWSController } from "../controllers/v2/crawl-status-ws";
@@ -359,6 +363,18 @@ v2Router.get(
   "/team/queue-status",
   authMiddleware(RateLimiterMode.CrawlStatus),
   wrap(queueStatusController),
+);
+
+v2Router.get(
+  "/team/daily-limit",
+  authMiddleware(RateLimiterMode.CrawlStatus),
+  wrap(dailyLimitController),
+);
+
+v2Router.patch(
+  "/team/daily-limit",
+  authMiddleware(RateLimiterMode.CrawlStatus),
+  wrap(updateDailyLimitController),
 );
 
 v2Router.post(
