@@ -929,10 +929,8 @@ jobs:
           mkdir -p logs/k8s
 
           # Collect pod logs
-          for pod in $(kubectl get pods -A -o name 2>/dev/null); do
-            namespace=$(echo $pod | cut -d'/' -f1)
-            pod_name=$(echo $pod | cut -d'/' -f2)
-            kubectl logs $pod -n $namespace --all-containers=true > logs/k8s/${namespace}-${pod_name}.log 2>&1 || true
+          kubectl get pods -A --no-headers -o custom-columns=":metadata.namespace,:metadata.name" 2>/dev/null | while read namespace pod_name; do
+            kubectl logs -n "$namespace" "$pod_name" --all-containers=true > "logs/k8s/${namespace}-${pod_name}.log" 2>&1 || true
           done
 
           # Collect deployment descriptions
