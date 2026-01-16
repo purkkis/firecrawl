@@ -214,7 +214,7 @@ jobs:
             --from-literal=PROXY_PASSWORD="${{ matrix.proxy == 'proxy' && secrets.PROXY_PASSWORD || '' }}" \
             --from-literal=SEARXNG_ENDPOINT="${{ matrix.search == 'searxng' && 'http://searxng:3434' || '' }}" \
             --from-literal=PLAYWRIGHT_MICROSERVICE_URL="${{ matrix.engine == 'playwright' && 'http://playwright-service:3003/scrape' || '' }}" \
-            --from-literal=TEST_SUITE_WEBSITE="http://test-site:4321"
+            --from-literal=TEST_SUITE_WEBSITE="http://test-site.default.svc.cluster.local:4321"
 
       - name: Deploy Firecrawl via Helm
         run: |
