@@ -194,14 +194,14 @@ jobs:
         env:
           GHCR_TOKEN: ${{ github.token }}
         run: |
-          kubectl create secret docker-registry ghcr-cred \
+          kubectl create secret docker-registry ghcr-secret \
             --docker-server=ghcr.io \
             --docker-username="${{ github.actor }}" \
             --docker-password="$GHCR_TOKEN" \
             --docker-email="noreply@github.com" \
             --dry-run=client -o yaml | kubectl apply -f -
 
-          kubectl patch serviceaccount default -p '{"imagePullSecrets":[{"name":"ghcr-cred"}]}'
+          kubectl patch serviceaccount default -p '{"imagePullSecrets":[{"name":"ghcr-secret"}]}'
 
       - name: Create secrets for Firecrawl
         run: |
@@ -223,8 +223,7 @@ jobs:
             -f ./infra/helm-charts/firecrawl/values-ci-test.yaml \
             --set image.repository=ghcr.io/${{ github.repository_owner }}/firecrawl-ci \
             --set image.tag=${{ github.sha }} \
-            --set image.dockerSecretEnabled=true \
-            --set imagePullSecrets[0].name=ghcr-cred \
+            --set image.pullSecrets[0].name=ghcr-secret \
             --wait \
             --timeout 10m \
             --debug
@@ -285,7 +284,7 @@ jobs:
                   app: test-site
               spec:
                 imagePullSecrets:
-                - name: ghcr-cred
+                - name: ghcr-secret
                 containers:
                 - name: test-site
                   image: ghcr.io/${{ github.repository_owner }}/test-site-ci:${{ github.sha }}
@@ -428,7 +427,7 @@ jobs:
                   app: playwright-service
               spec:
                 imagePullSecrets:
-                - name: ghcr-cred
+                - name: ghcr-secret
                 containers:
                 - name: playwright
                   image: ghcr.io/${{ github.repository_owner }}/playwright-service-ci:${{ github.sha }}
