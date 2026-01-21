@@ -308,6 +308,30 @@ fn _extract_metadata(
     }
   }
 
+  // Extract JSON-LD (application/ld+json) structured data
+  let mut json_ld_items: Vec<Value> = Vec::new();
+  for script in document
+    .select("script[type=\"application/ld+json\"]")
+    .map_err(|_| "Failed to select ld+json scripts")?
+  {
+    let content = script.text_contents();
+    let trimmed = content.trim();
+    if !trimmed.is_empty() {
+      // Try to parse as JSON to validate it
+      if let Ok(parsed) = serde_json::from_str::<Value>(trimmed) {
+        json_ld_items.push(parsed);
+      }
+    }
+  }
+
+  if !json_ld_items.is_empty() {
+    if json_ld_items.len() == 1 {
+      out.insert("jsonLd".to_string(), json_ld_items.into_iter().next().unwrap());
+    } else {
+      out.insert("jsonLd".to_string(), Value::Array(json_ld_items));
+    }
+  }
+
   Ok(out)
 }
 

@@ -186,6 +186,35 @@ export async function extractMetadata(
     meta.logger.error(`Error extracting metadata`, { error });
   }
 
+  // Extract JSON-LD (application/ld+json) structured data
+  let jsonLd: any = undefined;
+  try {
+    const jsonLdScripts = soup('script[type="application/ld+json"]');
+    const jsonLdItems: any[] = [];
+    jsonLdScripts.each((i, elem) => {
+      try {
+        const content = soup(elem).html();
+        if (content) {
+          const trimmed = content.trim();
+          if (trimmed) {
+            const parsed = JSON.parse(trimmed);
+            jsonLdItems.push(parsed);
+          }
+        }
+      } catch (parseError) {
+        // Skip invalid JSON-LD
+        meta.logger.debug("Failed to parse JSON-LD script", { parseError });
+      }
+    });
+    if (jsonLdItems.length === 1) {
+      jsonLd = jsonLdItems[0];
+    } else if (jsonLdItems.length > 1) {
+      jsonLd = jsonLdItems;
+    }
+  } catch (error) {
+    meta.logger.error("Error extracting JSON-LD", { error });
+  }
+
   return {
     title,
     description,
@@ -217,6 +246,7 @@ export async function extractMetadata(
     publishedTime,
     articleTag,
     articleSection,
+    jsonLd,
     scrapeId: meta.id,
     ...customMetadata,
   };

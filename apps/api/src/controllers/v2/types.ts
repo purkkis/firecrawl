@@ -1043,6 +1043,7 @@ export type Document = {
     publishedTime?: string;
     articleTag?: string;
     articleSection?: string;
+    jsonLd?: any;
     url?: string;
     sourceURL?: string;
     statusCode: number;

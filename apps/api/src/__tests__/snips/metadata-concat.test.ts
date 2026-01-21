@@ -103,4 +103,145 @@ describe("Metadata concatenation", () => {
 
     expect(metadata.favicon).toBe("https://example.com/favicon.ico");
   });
+
+  it("should extract single JSON-LD script tag", async () => {
+    const html = `
+      <html>
+        <head>
+          <title>Product Page</title>
+          <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@type": "Product",
+              "name": "Test Product",
+              "price": "99.99"
+            }
+          </script>
+        </head>
+        <body></body>
+      </html>
+    `;
+
+    const meta: any = {
+      url: "https://example.com",
+      id: "test-id",
+      logger: {
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+      },
+    };
+
+    const metadata = await extractMetadata(meta, html);
+
+    expect(metadata.jsonLd).toBeDefined();
+    expect(metadata.jsonLd["@type"]).toBe("Product");
+    expect(metadata.jsonLd.name).toBe("Test Product");
+    expect(metadata.jsonLd.price).toBe("99.99");
+  });
+
+  it("should extract multiple JSON-LD script tags as an array", async () => {
+    const html = `
+      <html>
+        <head>
+          <title>Product Page</title>
+          <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@type": "Product",
+              "name": "Test Product"
+            }
+          </script>
+          <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@type": "Organization",
+              "name": "Test Company"
+            }
+          </script>
+        </head>
+        <body></body>
+      </html>
+    `;
+
+    const meta: any = {
+      url: "https://example.com",
+      id: "test-id",
+      logger: {
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+      },
+    };
+
+    const metadata = await extractMetadata(meta, html);
+
+    expect(metadata.jsonLd).toBeDefined();
+    expect(Array.isArray(metadata.jsonLd)).toBe(true);
+    expect(metadata.jsonLd.length).toBe(2);
+    expect(metadata.jsonLd[0]["@type"]).toBe("Product");
+    expect(metadata.jsonLd[1]["@type"]).toBe("Organization");
+  });
+
+  it("should skip invalid JSON-LD and extract valid ones", async () => {
+    const html = `
+      <html>
+        <head>
+          <title>Product Page</title>
+          <script type="application/ld+json">
+            { invalid json here }
+          </script>
+          <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@type": "Product",
+              "name": "Valid Product"
+            }
+          </script>
+        </head>
+        <body></body>
+      </html>
+    `;
+
+    const meta: any = {
+      url: "https://example.com",
+      id: "test-id",
+      logger: {
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+      },
+    };
+
+    const metadata = await extractMetadata(meta, html);
+
+    expect(metadata.jsonLd).toBeDefined();
+    expect(metadata.jsonLd["@type"]).toBe("Product");
+    expect(metadata.jsonLd.name).toBe("Valid Product");
+  });
+
+  it("should return undefined jsonLd when no JSON-LD scripts exist", async () => {
+    const html = `
+      <html>
+        <head>
+          <title>Simple Page</title>
+        </head>
+        <body></body>
+      </html>
+    `;
+
+    const meta: any = {
+      url: "https://example.com",
+      id: "test-id",
+      logger: {
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+      },
+    };
+
+    const metadata = await extractMetadata(meta, html);
+
+    expect(metadata.jsonLd).toBeUndefined();
+  });
 });
