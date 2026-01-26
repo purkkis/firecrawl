@@ -331,7 +331,7 @@ pub async fn extract_metadata(html: Option<String>) -> napi::Result<HashMap<Stri
   })?
 }
 
-const EXCLUDE_NON_MAIN_TAGS: [&str; 42] = [
+const EXCLUDE_NON_MAIN_TAGS: [&str; 43] = [
   "header",
   "footer",
   "nav",
@@ -374,6 +374,7 @@ const EXCLUDE_NON_MAIN_TAGS: [&str; 42] = [
   ".cookie",
   "#cookie",
   ".fc-decoration",
+  ".grecaptcha-badge",
 ];
 
 const FORCE_INCLUDE_MAIN_TAGS: [&str; 13] = [

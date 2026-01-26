@@ -48,6 +48,7 @@ const excludeNonMainTags = [
   "#widget",
   ".cookie",
   "#cookie",
+  ".grecaptcha-badge",
 ];
 
 const forceIncludeMainTags = [
