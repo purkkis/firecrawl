@@ -27,12 +27,20 @@ export const getBrandingScript = () => String.raw`
 
   const styleCache = new WeakMap();
   const getComputedStyleCached = (el) => {
+    if (!el || !(el instanceof Element)) {
+      return null;
+    }
     if (styleCache.has(el)) {
       return styleCache.get(el);
     }
-    const style = getComputedStyle(el);
-    styleCache.set(el, style);
-    return style;
+    try {
+      const style = getComputedStyle(el);
+      styleCache.set(el, style);
+      return style;
+    } catch (e) {
+      recordError('getComputedStyleCached', e);
+      return null;
+    }
   };
 
   const toPx = v => {
@@ -274,7 +282,9 @@ export const getBrandingScript = () => String.raw`
       let count = 0;
       for (const el of elements) {
         if (count >= limit) break;
-        picksSet.add(el);
+        if (el && el instanceof Element) {
+          picksSet.add(el);
+        }
         count++;
       }
     };
@@ -288,7 +298,7 @@ export const getBrandingScript = () => String.raw`
     
     const allLinks = Array.from(document.querySelectorAll('a')).slice(0, 100);
     for (const link of allLinks) {
-      if (!picksSet.has(link) && looksLikeButton(link)) {
+      if (link && link instanceof Element && !picksSet.has(link) && looksLikeButton(link)) {
         picksSet.add(link);
       }
     }
@@ -296,11 +306,17 @@ export const getBrandingScript = () => String.raw`
     pushQ('input, select, textarea, [class*="form-control"]', 25);
     pushQ("h1, h2, h3, p, a", 50);
 
-    return Array.from(picksSet).filter(Boolean);
+    return Array.from(picksSet).filter(el => el && el instanceof Element);
   };
 
   const getStyleSnapshot = el => {
+    if (!el || !(el instanceof Element)) {
+      return null;
+    }
     const cs = getComputedStyleCached(el);
+    if (!cs) {
+      return null;
+    }
     const rect = el.getBoundingClientRect();
 
     const fontStack =
@@ -1200,7 +1216,7 @@ export const getBrandingScript = () => String.raw`
 
   const cssData = collectCSSData();
   const elements = sampleElements();
-  const snapshots = elements.map(getStyleSnapshot);
+  const snapshots = elements.map(getStyleSnapshot).filter(Boolean);
   const imageData = findImages();
   const typography = getTypography();
   const frameworkHints = detectFrameworkHints();
