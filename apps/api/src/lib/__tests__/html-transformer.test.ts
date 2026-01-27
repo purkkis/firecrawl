@@ -357,6 +357,33 @@ describe("HTML Transformer", () => {
       expect(result).not.toContain("Footer content");
     });
 
+    it("keeps procedure steps wrapped in sidebar when onlyMainContent is enabled", async () => {
+      const options: TransformHtmlOptions = {
+        html: `
+          <div class="procedure">
+            <ol class="procedure">
+              <li class="step">
+                <div class="sidebar">
+                  <p>Go to SETTINGS</p>
+                </div>
+              </li>
+            </ol>
+          </div>
+          <div class="sidebar">
+            <p>Sidebar content</p>
+          </div>
+        `,
+        url: "https://example.com",
+        includeTags: [],
+        excludeTags: [],
+        onlyMainContent: true,
+      };
+
+      const result = await transformHtml(options);
+      expect(result).toContain("Go to SETTINGS");
+      expect(result).not.toContain("Sidebar content");
+    });
+
     it("should handle nested content preservation and absolute links", async () => {
       const options: TransformHtmlOptions = {
         html: `

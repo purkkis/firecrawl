@@ -165,11 +165,20 @@ export const htmlTransform = async (
 
   if (scrapeOptions.onlyMainContent) {
     excludeNonMainTags.forEach(tag => {
-      const elementsToRemove = soup(tag).filter(
-        forceIncludeMainTags.map(x => ":not(:has(" + x + "))").join(""),
-      );
-
-      elementsToRemove.remove();
+      const isSidebarSelector = tag === ".sidebar" || tag === "#sidebar";
+      soup(tag).each((_, element) => {
+        const el = soup(element);
+        if (isSidebarSelector && el.parents(".procedure, .step").length > 0) {
+          return;
+        }
+        const hasForceInclude = forceIncludeMainTags.some(
+          selector => el.find(selector).length > 0,
+        );
+        if (hasForceInclude) {
+          return;
+        }
+        el.remove();
+      });
     });
   }
 

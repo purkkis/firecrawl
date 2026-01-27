@@ -392,6 +392,27 @@ const FORCE_INCLUDE_MAIN_TAGS: [&str; 13] = [
   ".swoogo-agenda",
 ];
 
+const SIDEBAR_ALLOW_ANCESTOR_CLASSES: [&str; 2] = ["procedure", "step"];
+
+fn node_has_class(node: &NodeRef, class_name: &str) -> bool {
+  let Some(element) = node.as_element() else {
+    return false;
+  };
+  let attrs = element.attributes.borrow();
+  let Some(classes) = attrs.get("class") else {
+    return false;
+  };
+  classes.split_whitespace().any(|c| c == class_name)
+}
+
+fn has_ancestor_with_class(node: &NodeRef, class_names: &[&str]) -> bool {
+  node.ancestors().any(|ancestor| {
+    class_names
+      .iter()
+      .any(|class_name| node_has_class(&ancestor, class_name))
+  })
+}
+
 #[derive(Deserialize, Serialize)]
 #[napi(object)]
 pub struct TransformHtmlOptions {
@@ -506,12 +527,17 @@ fn _transform_html_inner(
   }
 
   if opts.only_main_content {
-    for x in EXCLUDE_NON_MAIN_TAGS.iter() {
-      let x: Vec<_> = document
-        .select(x)
+    for selector in EXCLUDE_NON_MAIN_TAGS.iter() {
+      let nodes: Vec<_> = document
+        .select(selector)
         .map_err(|_| "Failed to select tags")?
         .collect();
-      for tag in x {
+      for tag in nodes {
+        if (*selector == ".sidebar" || *selector == "#sidebar")
+          && has_ancestor_with_class(tag.as_node(), &SIDEBAR_ALLOW_ANCESTOR_CLASSES)
+        {
+          continue;
+        }
         if !FORCE_INCLUDE_MAIN_TAGS.iter().any(|x| {
           tag
             .as_node()
