@@ -130,7 +130,7 @@ export function buildBrandingPrompt(input: BrandingLLMInput): string {
 
   const baseHostname = (() => {
     try {
-      return new URL(url).hostname.toLowerCase();
+      return new URL(displayUrl).hostname.toLowerCase();
     } catch {
       return "";
     }
@@ -147,7 +147,7 @@ export function buildBrandingPrompt(input: BrandingLLMInput): string {
     if (!href || !href.trim()) return "none";
     if (hrefMatch) return "home";
     try {
-      const resolved = new URL(href, url);
+      const resolved = new URL(href, displayUrl);
       if (!resolved.hostname || !baseHostname) return "internal";
       return resolved.hostname.toLowerCase() === baseHostname
         ? "internal"
