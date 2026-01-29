@@ -246,7 +246,9 @@ export const getStyleSnapshot = (el: Element): StyleSnapshot => {
       id: el.id || "",
       label: (() => {
         if (el.id) {
-          const label = document.querySelector('label[for="' + el.id + '"]');
+          const label = document.querySelector(
+            'label[for="' + CSS.escape(el.id) + '"]',
+          );
           if (label) return (label.textContent || "").trim().substring(0, 100);
         }
         const parentLabel = el.closest("label");

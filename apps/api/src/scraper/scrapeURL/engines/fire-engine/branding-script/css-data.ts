@@ -1,4 +1,3 @@
-import { recordError } from "./helpers";
 import { toPx } from "./helpers";
 
 export interface CSSData {
@@ -18,8 +17,8 @@ export const collectCSSData = (): CSSData => {
     let rules: CSSRuleList | null;
     try {
       rules = sheet.cssRules;
-    } catch (e) {
-      recordError("collectCSSData - CORS stylesheet", e);
+    } catch {
+      // CORS stylesheets throw SecurityError when accessing cssRules - this is expected
       continue;
     }
     if (!rules) continue;

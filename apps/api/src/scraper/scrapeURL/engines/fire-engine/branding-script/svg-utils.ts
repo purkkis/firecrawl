@@ -14,14 +14,14 @@ export const resolveSvgUseElements = (
     const targetId = idMatch[1];
 
     let referencedEl: Element | null = originalSvg.querySelector(
-      "#" + targetId,
+      "#" + CSS.escape(targetId),
     );
 
     if (!referencedEl) {
       let parent = originalSvg.parentElement;
       while (parent && !referencedEl) {
         if (parent.tagName === "svg" || parent.tagName === "SVG") {
-          referencedEl = parent.querySelector("#" + targetId);
+          referencedEl = parent.querySelector("#" + CSS.escape(targetId));
         }
         parent = parent.parentElement;
       }
