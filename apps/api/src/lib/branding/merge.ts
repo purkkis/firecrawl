@@ -23,6 +23,8 @@ export function mergeBrandingResults(
     if (llm.logoSelection.selectedLogoIndex === -1) {
       if (merged.images) {
         delete merged.images.logo;
+        delete merged.images.logoHref;
+        delete merged.images.logoAlt;
       }
       (merged as any).__llm_logo_reasoning = {
         selectedIndex: -1,
@@ -144,8 +146,16 @@ export function mergeBrandingResults(
             merged.images = {};
           }
           merged.images.logo = selectedLogo.src;
-          if (selectedLogo.href) merged.images.logoHref = selectedLogo.href;
-          if (selectedLogo.alt) merged.images.logoAlt = selectedLogo.alt;
+          if (selectedLogo.href) {
+            merged.images.logoHref = selectedLogo.href;
+          } else {
+            delete merged.images.logoHref;
+          }
+          if (selectedLogo.alt) {
+            merged.images.logoAlt = selectedLogo.alt;
+          } else {
+            delete merged.images.logoAlt;
+          }
           (merged as any).__llm_logo_reasoning = {
             selectedIndex: llm.logoSelection.selectedLogoIndex,
             reasoning: llm.logoSelection.selectedLogoReasoning,

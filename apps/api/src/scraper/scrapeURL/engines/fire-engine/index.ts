@@ -238,12 +238,11 @@ export async function scrapeURLWithFireEngineChromeCDP(
       "engine.team_id": meta.internalOptions.teamId,
     });
     const hasBranding = hasFormatOfType(meta.options.formats, "branding");
+    const defaultWait = hasBranding ? BRANDING_DEFAULT_WAIT_MS : 0;
     const effectiveWait =
-      meta.options.waitFor !== 0
+      meta.options.waitFor != null && meta.options.waitFor !== 0
         ? meta.options.waitFor
-        : hasBranding
-          ? BRANDING_DEFAULT_WAIT_MS
-          : 0;
+        : defaultWait;
 
     const actions: InternalAction[] = [
       // Transform waitFor option into an action (unsupported by chrome-cdp).
@@ -578,12 +577,12 @@ export function fireEngineMaxReasonableTime(
   meta: Meta,
   engine: "chrome-cdp" | "playwright" | "tlsclient",
 ): number {
+  const hasBranding = hasFormatOfType(meta.options.formats, "branding");
+  const defaultWait = hasBranding ? BRANDING_DEFAULT_WAIT_MS : 0;
   const effectiveWait =
-    meta.options.waitFor !== 0
+    meta.options.waitFor != null && meta.options.waitFor !== 0
       ? meta.options.waitFor
-      : hasFormatOfType(meta.options.formats, "branding")
-        ? BRANDING_DEFAULT_WAIT_MS
-        : 0;
+      : defaultWait;
 
   if (engine === "tlsclient") {
     return 15000;

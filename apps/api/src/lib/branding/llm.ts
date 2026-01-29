@@ -124,12 +124,6 @@ export async function enhanceBrandingWithLLM(
       },
     });
 
-    console.log("🔥 prompt", prompt);
-
-    console.log("🔥 screenshot", input.screenshot);
-
-    console.log("🔥 result", result);
-
     if (isDebugBrandingEnabled(input)) {
       const reasoningPreview = result.reasoning
         ? result.reasoning.length > 1000
