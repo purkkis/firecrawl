@@ -282,6 +282,7 @@ async fn test_v2_agent_with_schema() {
     let client = get_client();
 
     #[derive(Debug, serde::Deserialize)]
+    #[allow(dead_code)]
     struct WebsiteInfo {
         title: Option<String>,
         description: Option<String>,
