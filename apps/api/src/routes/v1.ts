@@ -41,7 +41,7 @@ import {
   paymentMiddleware,
   getX402ResourceServer,
   createX402RouteConfig,
-  x402ConfigMiddleware,
+  isX402Enabled,
 } from "../lib/x402";
 
 expressWs(express());
@@ -311,19 +311,21 @@ v1Router.get(
   wrap(queueStatusController),
 );
 
-v1Router.post(
-  "/x402/search",
-  authMiddleware(RateLimiterMode.Search),
-  countryCheck,
-  x402ConfigMiddleware,
-  paymentMiddleware(
-    createX402RouteConfig(
-      "POST /x402/search",
-      "The search endpoint combines web search (SERP) with Firecrawl's scraping capabilities to return full page content for any query. Requires micropayment via X402 protocol",
-      {},
-      {},
+// Only register x402 routes if X402_PAY_TO_ADDRESS is configured
+if (isX402Enabled()) {
+  v1Router.post(
+    "/x402/search",
+    authMiddleware(RateLimiterMode.Search),
+    countryCheck,
+    paymentMiddleware(
+      createX402RouteConfig(
+        "POST /x402/search",
+        "The search endpoint combines web search (SERP) with Firecrawl's scraping capabilities to return full page content for any query. Requires micropayment via X402 protocol",
+        {},
+        {},
+      ),
+      getX402ResourceServer(),
     ),
-    getX402ResourceServer(),
-  ),
-  wrap(x402SearchController),
-);
+    wrap(x402SearchController),
+  );
+}
