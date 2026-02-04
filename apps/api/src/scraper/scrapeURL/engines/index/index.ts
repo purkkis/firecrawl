@@ -210,9 +210,11 @@ export async function scrapeURLWithIndex(
   if (meta.options.maxAge !== undefined) {
     maxAge = meta.options.maxAge;
   } else {
-    const domainSplitsHash = generateDomainSplits(
-      new URL(meta.url).hostname,
-    ).map(x => hashURL(x));
+    const hostname = new URL(meta.url).hostname;
+    const fakeDomain = meta.options.__experimental_omceDomain;
+    const domainSplitsHash = generateDomainSplits(hostname, fakeDomain).map(x =>
+      hashURL(x),
+    );
     const level = domainSplitsHash.length - 1;
 
     if (

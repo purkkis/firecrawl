@@ -527,12 +527,15 @@ export async function queryIndexAtDomainSplitLevel(
 export async function queryOMCESignatures(
   hostname: string,
   maxAge = 2 * 24 * 60 * 60 * 1000,
+  fakeDomain?: string,
 ): Promise<string[]> {
   if (!useIndex || config.FIRECRAWL_INDEX_WRITE_ONLY) {
     return [];
   }
 
-  const domainSplitsHash = generateDomainSplits(hostname).map(x => hashURL(x));
+  const domainSplitsHash = generateDomainSplits(hostname, fakeDomain).map(x =>
+    hashURL(x),
+  );
 
   const level = domainSplitsHash.length - 1;
   if (domainSplitsHash.length === 0) {

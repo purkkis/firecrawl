@@ -75,9 +75,13 @@ export const htmlTransform = async (
 
   if (scrapeOptions.__experimental_omce) {
     try {
-      const hostname =
-        scrapeOptions.__experimental_omceDomain || new URL(url).hostname;
-      omceSignatures = await queryOMCESignatures(hostname);
+      const hostname = new URL(url).hostname;
+      const fakeDomain = scrapeOptions.__experimental_omceDomain;
+      omceSignatures = await queryOMCESignatures(
+        hostname,
+        undefined,
+        fakeDomain,
+      );
       logger.info("Got OMCE signatures", { signatures: omceSignatures.length });
     } catch (error) {
       logger.warn("Failed to get omce signatures.", {
