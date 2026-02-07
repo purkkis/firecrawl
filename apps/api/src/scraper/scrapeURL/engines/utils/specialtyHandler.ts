@@ -127,12 +127,17 @@ export async function specialtyScrapeCheck(
       );
     }
     if (isOleSignature) {
-      // Override content type to application/msword so the document converter
-      // correctly identifies this as a legacy .doc file
+      // OLE2 signature is shared by .doc/.xls/.ppt files
+      // Only override to application/msword if URL suggests it's a .doc file
+      const url = feRes?.url?.toLowerCase() ?? "";
+      const isDocUrl = url.endsWith(".doc") || url.includes(".doc?");
+      const effectiveContentType = isDocUrl
+        ? "application/msword"
+        : contentType;
       throw new AddFeatureError(
         ["document"],
         undefined,
-        await feResToDocumentPrefetch(logger, feRes, "application/msword"),
+        await feResToDocumentPrefetch(logger, feRes, effectiveContentType),
       );
     }
   }
