@@ -32,6 +32,36 @@ function getDocumentTypeFromUrl(url: string): DocumentType {
   return DocumentType.Docx; // hope for the best
 }
 
+function getDocumentTypeFromContent(buffer: Buffer): DocumentType | null {
+  // Detect document type from magic bytes/file signature
+  // This is more reliable than content-type or URL extension
+
+  // RTF: starts with "{\rtf"
+  if (buffer.length >= 5 && buffer.toString("ascii", 0, 5) === "{\\rtf") {
+    return DocumentType.Rtf;
+  }
+
+  // OLE2/CFB (legacy .doc, .xls, .ppt): starts with D0 CF 11 E0
+  if (
+    buffer.length >= 4 &&
+    buffer[0] === 0xd0 &&
+    buffer[1] === 0xcf &&
+    buffer[2] === 0x11 &&
+    buffer[3] === 0xe0
+  ) {
+    return DocumentType.Doc; // Could also be .xls/.ppt, but Doc is most common
+  }
+
+  // ZIP-based formats (.docx, .xlsx, .odt): starts with "PK" (0x50 0x4B)
+  if (buffer.length >= 2 && buffer[0] === 0x50 && buffer[1] === 0x4b) {
+    // Need to check the content to distinguish between docx, xlsx, odt
+    // For now, return null and let other detection methods handle it
+    return null;
+  }
+
+  return null;
+}
+
 function getDocumentTypeFromContentType(
   contentType: string | null,
 ): DocumentType | null {
@@ -136,7 +166,10 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
       }
     }
 
+    // Detect document type: content-based detection is most reliable,
+    // then fall back to content-type header, then URL extension
     const documentType =
+      getDocumentTypeFromContent(buffer) ??
       getDocumentTypeFromContentType(response.headers.get("content-type")) ??
       getDocumentTypeFromUrl(response.url);
 
