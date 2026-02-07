@@ -119,11 +119,20 @@ export async function specialtyScrapeCheck(
       feRes?.file?.content.startsWith("0M8R4K") ||
       feRes?.content.startsWith("\xD0\xCF\x11\xE0");
 
-    if (isZipSignature || isOleSignature) {
+    if (isZipSignature) {
       throw new AddFeatureError(
         ["document"],
         undefined,
         await feResToDocumentPrefetch(logger, feRes, contentType),
+      );
+    }
+    if (isOleSignature) {
+      // Override content type to application/msword so the document converter
+      // correctly identifies this as a legacy .doc file
+      throw new AddFeatureError(
+        ["document"],
+        undefined,
+        await feResToDocumentPrefetch(logger, feRes, "application/msword"),
       );
     }
   }

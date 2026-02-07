@@ -249,7 +249,8 @@ fn extract_document_text_utf16(data: &[u8], expected_chars: usize) -> String {
   };
 
   let mut i = 0;
-  while i + 1 < data.len() && text.chars().count() < max_chars {
+  let mut char_count = 0;
+  while i + 1 < data.len() && char_count < max_chars {
     let code = u16::from_le_bytes([data[i], data[i + 1]]);
 
     if let Some(ch) = char::from_u32(code as u32) {
@@ -259,6 +260,7 @@ fn extract_document_text_utf16(data: &[u8], expected_chars: usize) -> String {
         } else {
           text.push(ch);
         }
+        char_count += 1;
       }
     }
     i += 2;
