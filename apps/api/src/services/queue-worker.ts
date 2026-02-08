@@ -199,6 +199,12 @@ const processGenerateLlmsTxtJobInternal = async (
 };
 
 async function processFinishCrawlJobInternal(_job: NuQJob) {
+  const logger = _logger.child({
+    module: "queue-worker",
+    method: "processFinishCrawlJobInternal",
+    jobId: _job.id,
+  });
+
   const job = await crawlFinishedQueue.getJob(_job.id);
 
   if (!job) {
@@ -222,7 +228,37 @@ async function processFinishCrawlJobInternal(_job: NuQJob) {
   const anyJob = await scrapeQueue.getGroupAnyJob(job.groupId, job.ownerId);
 
   if (!anyJob) {
-    throw new Error("crawlFinish couldn't find anyJob");
+    // If we can't find a scrape job, construct a synthetic job using data from StoredCrawl
+    // This ensures crawl finalization can still proceed and the crawls table gets populated
+    // This is important because the exporter service depends on the crawls table record
+    logger.warn(
+      "crawlFinish couldn't find anyJob, using synthetic job for finalization",
+      {
+        crawlId: job.groupId,
+        ownerId: job.ownerId,
+        teamId: sc.team_id,
+      },
+    );
+
+    const syntheticJob: NuQJob<any> = {
+      id: `synthetic-finish-${job.groupId}`,
+      status: "completed",
+      createdAt: new Date(),
+      priority: 0,
+      groupId: job.groupId,
+      ownerId: job.ownerId,
+      data: {
+        // Use v1 path which doesn't require job data for webhooks
+        // and just counts completed jobs from Redis
+        v1: true,
+        team_id: sc.team_id,
+        zeroDataRetention: sc.zeroDataRetention ?? false,
+        // requestId defaults to crawlId in finishCrawlSuper when not provided
+      },
+    };
+
+    await finishCrawlSuper(syntheticJob);
+    return;
   }
 
   await finishCrawlSuper(anyJob);
