@@ -80,7 +80,7 @@ async function supaCheckTeamCredits(
 
   // Check org-level flags for bypassCreditChecks
   try {
-    const orgFlagsCacheKey = `team_org_flags_${team_id}`;
+    const orgFlagsCacheKey = `org_flags_team_${team_id}`;
     let orgFlags: Record<string, unknown> | null = null;
     const cachedOrgFlags = await getValue(orgFlagsCacheKey);
     if (cachedOrgFlags !== null) {
