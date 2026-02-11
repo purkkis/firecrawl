@@ -2,6 +2,25 @@ import { BrandingProfile } from "../../types/branding";
 import { ButtonSnapshot, BrandingLLMInput } from "./types";
 import { parse, rgb } from "culori";
 
+function sanitizeForPrompt(
+  str: string | undefined | null,
+  maxLen: number,
+): string {
+  if (!str) return "";
+  return str
+    .replace(/[\r\n]+/g, " ") // flatten newlines
+    .replace(/[\x00-\x1f\x7f]/g, "") // strip control chars
+    .trim()
+    .substring(0, maxLen);
+}
+
+function sanitizeBrandName(str: string | undefined | null): string {
+  if (!str) return "";
+  // Take only content before pipe, quote, or other delimiters that signal injection
+  let name = str.split(/[|"<>{}[\]]/)[0].trim();
+  return sanitizeForPrompt(name, 80);
+}
+
 export function buildBrandingPrompt(input: BrandingLLMInput): string {
   const {
     jsAnalysis,
@@ -17,11 +36,11 @@ export function buildBrandingPrompt(input: BrandingLLMInput): string {
     ogImage,
     heuristicLogoPick,
   } = input;
-  const normalizedBrandName = (brandName || "")
-    .toLowerCase()
-    .replace(/\s+/g, "");
+  const safeBrandName = sanitizeBrandName(brandName);
+  const normalizedBrandName = safeBrandName.toLowerCase().replace(/\s+/g, "");
+  const safePageTitle = sanitizeForPrompt(pageTitle, 200);
   const displayUrl = pageUrl || url;
-  const hasPageContext = !!(pageTitle || displayUrl);
+  const hasPageContext = !!(safePageTitle || displayUrl);
 
   let prompt = `Analyze the branding of this website`;
   if (displayUrl) prompt += `: ${displayUrl}`;
@@ -30,7 +49,7 @@ export function buildBrandingPrompt(input: BrandingLLMInput): string {
     prompt += `## Page context (use to infer the site's brand)\n`;
     if (displayUrl)
       prompt += `- **URL** (final after redirects): ${displayUrl}\n`;
-    if (pageTitle) prompt += `- **Page title**: "${pageTitle}"\n`;
+    if (safePageTitle) prompt += `- **Page title**: "${safePageTitle}"\n`;
     prompt += `Use the full page title and URL to infer the site's brand. Many sites use "Page Name | Brand" or "Brand - Page Name" — the brand is often the **second part** (e.g. "AI Innovation Workspace | Miro" → brand is Miro) or the **domain** from the URL. Pick the logo that matches the **actual brand** (from title/URL), not necessarily the first phrase in the title. Our heuristic brand name below is a hint; prefer your inference from title/URL when it makes more sense.\n\n`;
   }
 
@@ -44,7 +63,8 @@ export function buildBrandingPrompt(input: BrandingLLMInput): string {
       prompt += `Below is a simplified snippet of the page header/nav area. Use it only for context:\n`;
       prompt += `- **Brand name**: Infer from link text, aria-labels, or title attributes (e.g. \`<a aria-label="X logo">\`, \`<title>X</title>\`).\n`;
       prompt += `- **Logo note**: If you see a logo-like element (e.g. \`<a aria-label*="logo">\`, \`<img>\` in header, inline \`<svg>\`) that wasn't captured as a candidate, you may note it in reasoning—but do NOT return a logo URL or index from this HTML. Only logo candidates (none here) can be selected.\n`;
-      prompt += `\n\`\`\`html\n${headerHtmlChunk}\n\`\`\`\n\n`;
+      const safeHeaderChunk = sanitizeForPrompt(headerHtmlChunk, 3000);
+      prompt += `\n\`\`\`html\n${safeHeaderChunk}\n\`\`\`\n\n`;
     }
   }
 
@@ -281,12 +301,12 @@ export function buildBrandingPrompt(input: BrandingLLMInput): string {
       const bgInfo = getColorInfo(btn.background);
 
       prompt += `**Button #${idx}:**\n`;
-      prompt += `- Text: "${btn.text}"\n`;
+      prompt += `- Text: "${sanitizeForPrompt(btn.text, 80)}"\n`;
       prompt += `- Background Color: ${btn.background} (${bgInfo.description}${bgInfo.isVibrant ? " - VIBRANT/BRAND COLOR" : ""})\n`;
       prompt += `- Text Color: ${btn.textColor}\n`;
       if (btn.borderColor) prompt += `- Border Color: ${btn.borderColor}\n`;
       if (btn.borderRadius) prompt += `- Border Radius: ${btn.borderRadius}\n`;
-      prompt += `- Classes: ${btn.classes.substring(0, 150)}${btn.classes.length > 150 ? "..." : ""}\n`;
+      prompt += `- Classes: ${sanitizeForPrompt(btn.classes, 150)}${btn.classes.length > 150 ? "..." : ""}\n`;
       prompt += `\n`;
     });
   }
@@ -316,12 +336,12 @@ export function buildBrandingPrompt(input: BrandingLLMInput): string {
       prompt += `The main logo is often the favicon image or favicon + wordmark. Prefer a candidate whose src matches or resembles the favicon (same domain/filename, or "Logo.svg"/wordmark in header with href=home). Do NOT pick a random header SVG that does not link to home and does not match the favicon/brand.\n\n`;
     }
 
-    if (brandName || hasPageContext) {
+    if (safeBrandName || hasPageContext) {
       if (hasPageContext) {
         prompt += `**Brand**: Infer from page title/URL above (e.g. "X | Miro" → brand Miro). The logo should match that brand.\n`;
       }
-      if (brandName) {
-        prompt += `Heuristic brand hint: "${brandName}" (from page meta/title — use only if it aligns with your inference from title/URL).\n\n`;
+      if (safeBrandName) {
+        prompt += `Heuristic brand hint: "${safeBrandName}" (from page meta/title — use only if it aligns with your inference from title/URL).\n\n`;
       } else if (hasPageContext) {
         prompt += `\n`;
       }
@@ -360,7 +380,7 @@ export function buildBrandingPrompt(input: BrandingLLMInput): string {
           : "n/a";
 
       prompt += `\n**Logo Candidate #${idx}**\n`;
-      prompt += `  Metadata: alt:"${(candidate.alt || "").replace(/"/g, '\\"')}" | ariaLabel:"${(candidate.ariaLabel || "").replace(/"/g, '\\"')}" | title:"${(candidate.title || "").replace(/"/g, '\\"')}" | source:${candidate.source ?? "n/a"} | location:${candidate.location} | isVisible:${candidate.isVisible} | position:${positionLabel} | indicators:${JSON.stringify(candidate.indicators)}${svgScoreLabel ? ` | ${svgScoreLabel}` : ""}\n`;
+      prompt += `  Metadata: alt:"${sanitizeForPrompt(candidate.alt, 100)}" | ariaLabel:"${sanitizeForPrompt(candidate.ariaLabel, 100)}" | title:"${sanitizeForPrompt(candidate.title, 100)}" | source:${candidate.source ?? "n/a"} | location:${candidate.location} | isVisible:${candidate.isVisible} | position:${positionLabel} | indicators:${JSON.stringify(candidate.indicators)}${svgScoreLabel ? ` | ${svgScoreLabel}` : ""}\n`;
       prompt += `  Size: ${meta.width}x${meta.height} (${meta.sizeLabel}, area:${meta.area}, aspect:${aspectLabel}) | href:${meta.hrefType}${candidate.href ? ` | hrefUrl:${candidate.href.length > 60 ? candidate.href.substring(0, 60) + "..." : candidate.href}` : ""} | hints:[${hintLabel}]\n`;
       prompt += `  Source URL: ${urlPreview}\n`;
     });
@@ -390,7 +410,7 @@ export function buildBrandingPrompt(input: BrandingLLMInput): string {
     }
     prompt += `**Simple Rules:**\n`;
     prompt += `1. **Look at the TOP of the page** - The main logo is almost always in the header/navbar at the very top\n`;
-    prompt += `2. **Primary logo** - Choose the largest, most visible logo that represents "${brandName || "the website's brand"}" (prefer medium/large size, isVisible:true)\n`;
+    prompt += `2. **Primary logo** - Choose the largest, most visible logo that represents "${safeBrandName || "the website's brand"}" (prefer medium/large size, isVisible:true)\n`;
     prompt += `3. **Prefer header logos** - Logos in the header/navbar area are the brand logo (highest priority)\n`;
     prompt += `4. **Ignore partner/client logos** - Skip smaller logos in "customers", "partners", or footer sections\n`;
     if (input.screenshot) {
@@ -501,7 +521,7 @@ export function buildBrandingPrompt(input: BrandingLLMInput): string {
       prompt += `   - **Heuristic suggested #${heuristicLogoPick.selectedIndexInFilteredList}.** Confirm it (return the same index with reasoning) OR pick a different index; if you pick differently, explain why the heuristic was wrong and why your choice is better.\n`;
     }
     prompt += `   - **YOU MUST RETURN**: selectedLogoIndex (number), selectedLogoReasoning (string), and confidence (0-1)\n`;
-    prompt += `   - **CRITICAL**: NEVER pick a tiny/invisible/UI icon. Prefer the MAIN visible header logo (medium/large size, isVisible:true, alt like "${brandName || "Brand"} Home").\n`;
+    prompt += `   - **CRITICAL**: NEVER pick a tiny/invisible/UI icon. Prefer the MAIN visible header logo (medium/large size, isVisible:true, alt like "${safeBrandName || "Brand"} Home").\n`;
     prompt += `   - **IT'S OK TO RETURN -1**: If no candidate is a good brand logo, return -1 with low confidence\n`;
     prompt += `   - **DECISION PROCESS**:\n`;
     if (input.screenshot) {
@@ -509,7 +529,7 @@ export function buildBrandingPrompt(input: BrandingLLMInput): string {
       prompt += `     2. Match that visual to a candidate; prefer isVisible:true and larger size\n`;
     } else {
       prompt += `     1. Filter by isVisible:true and size (prefer medium/large over tiny/small)\n`;
-      prompt += `     2. Prefer candidates with alt matching brand (e.g. "${brandName || "Brand"} Home"), href=home, in header\n`;
+      prompt += `     2. Prefer candidates with alt matching brand (e.g. "${safeBrandName || "Brand"} Home"), href=home, in header\n`;
     }
     prompt += `     3. Reject any candidate with alt containing "menu", "hamburger", "toggle", "mobile menu", "close"\n`;
     prompt += `     4. If multiple candidates share the same href, pick the LARGER one (primary logo), not the smaller/hidden variant\n`;
@@ -517,7 +537,7 @@ export function buildBrandingPrompt(input: BrandingLLMInput): string {
     prompt += `   - **STRONG INDICATORS** (prioritize candidates with these):\n`;
     prompt += `     * isVisible:true AND size medium/large (not tiny) → The main logo users see\n`;
     prompt += `     * "href:/" or "hrefMatch" → Logo links to homepage (VERY STRONG)\n`;
-    prompt += `     * "header" + alt like "${brandName || "brand name"} Home" → Primary brand logo\n`;
+    prompt += `     * "header" + alt like "${safeBrandName || "brand name"} Home" → Primary brand logo\n`;
     prompt += `     * Larger width×height when same href as other candidates → Primary; smaller = collapsed/mini variant\n`;
     prompt += `   - **AVOID** (do NOT pick these; return -1 if only these remain):\n`;
     prompt += `     * isVisible:false when another candidate has isVisible:true\n`;

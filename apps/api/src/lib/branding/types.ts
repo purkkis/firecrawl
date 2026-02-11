@@ -107,7 +107,7 @@ export interface BrandingScriptReturn {
     tag: string;
     classes: string;
     text: string;
-    rect: { w: number; h: number };
+    rect: { w: number; h: number; top: number; left: number };
     colors: {
       text: string;
       background: string;
@@ -150,6 +150,7 @@ export interface BrandingScriptReturn {
       label: string;
     } | null;
     isLink: boolean;
+    isVisible: boolean;
   }>;
   images: Array<{ type: string; src: string }>;
   logoCandidates?: Array<{

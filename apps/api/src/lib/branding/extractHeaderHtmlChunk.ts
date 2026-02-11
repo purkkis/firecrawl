@@ -20,6 +20,18 @@ function stripNoise(html: string): string {
   out = out.replace(/<script\b[\s\S]*?<\/script>/gi, "");
   // Styles
   out = out.replace(/<style\b[\s\S]*?<\/style>/gi, "");
+  // Strip hidden elements (display:none or visibility:hidden in inline style)
+  out = out.replace(
+    /<[^>]+style\s*=\s*"[^"]*(?:display\s*:\s*none|visibility\s*:\s*hidden)[^"]*"[^>]*>[\s\S]*?<\/[^>]+>/gi,
+    "",
+  );
+  // Strip data-* attributes
+  out = out.replace(/\s+data-[\w-]+="[^"]*"/gi, "");
+  out = out.replace(/\s+data-[\w-]+='[^']*'/gi, "");
+  // Sanitize aria-label (keep attribute but truncate long values likely to be injection)
+  out = out.replace(/\s+aria-label="[^"]{50,}"/gi, ' aria-label="[truncated]"');
+  // Strip title attributes longer than 50 chars (likely injection)
+  out = out.replace(/\s+title="[^"]{50,}"/gi, "");
   return out;
 }
 

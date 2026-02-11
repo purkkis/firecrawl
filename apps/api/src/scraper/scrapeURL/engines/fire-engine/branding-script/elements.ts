@@ -48,7 +48,7 @@ export interface StyleSnapshot {
   tag: string;
   classes: string;
   text: string;
-  rect: { w: number; h: number };
+  rect: { w: number; h: number; top: number; left: number };
   colors: {
     text: string;
     background: string;
@@ -82,6 +82,7 @@ export interface StyleSnapshot {
   isInput: boolean;
   inputMetadata: InputMetadata | null;
   isLink: boolean;
+  isVisible: boolean;
 }
 
 interface InputMetadata {
@@ -162,6 +163,11 @@ export const getStyleSnapshot = (el: Element): StyleSnapshot => {
       depth++;
     }
   }
+
+  const isHidden =
+    cs.getPropertyValue("display") === "none" ||
+    cs.getPropertyValue("visibility") === "hidden" ||
+    parseFloat(cs.getPropertyValue("opacity") || "1") === 0;
 
   const isButton = isButtonElement(el);
 
@@ -267,7 +273,7 @@ export const getStyleSnapshot = (el: Element): StyleSnapshot => {
     tag: el.tagName.toLowerCase(),
     classes: classNames,
     text: text,
-    rect: { w: rect.width, h: rect.height },
+    rect: { w: rect.width, h: rect.height, top: rect.top, left: rect.left },
     colors: {
       text: textColor,
       background: bgColor,
@@ -315,5 +321,6 @@ export const getStyleSnapshot = (el: Element): StyleSnapshot => {
     isInput: isInputField,
     inputMetadata: inputMetadata,
     isLink: el.matches("a"),
+    isVisible: !isHidden,
   };
 };
