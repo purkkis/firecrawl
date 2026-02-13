@@ -23,15 +23,12 @@ async function addCoupon(teamId: string, integration: any) {
     code: integration.coupon_code,
     is_extract: false,
     expires_at: expiresAt,
-    override_rate_limits: integration.coupon_rate_limits,
-    override_concurrency: integration.coupon_concurrency,
   });
 
   if (error) {
     throw error;
   }
 
-  // Also write to team_overrides table
   if (integration.coupon_rate_limits || integration.coupon_concurrency) {
     const { error: overrideError } = await (supabase_service as any)
       .from("team_overrides")
@@ -40,14 +37,11 @@ async function addCoupon(teamId: string, integration: any) {
         rate_limits: integration.coupon_rate_limits || null,
         concurrency: integration.coupon_concurrency || null,
         expires_at: expiresAt,
-        description: `Integration coupon (${integration.coupon_code || "unknown"})`,
+        internal_comment: `Integration coupon (${integration.display_name || integration.slug || "unknown"})`,
       });
 
     if (overrideError) {
-      logger.error("Error inserting team_overrides for integration coupon", {
-        error: overrideError,
-      });
-      // Non-fatal: coupon was already created
+      throw overrideError;
     }
   }
 }
