@@ -189,7 +189,6 @@ export async function browserCreateController(
       {
         ttl,
         ...(activityTtl !== undefined ? { activityTtl } : {}),
-        ...(region ? { region } : {}),
       },
     );
   } catch (err) {
