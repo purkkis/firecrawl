@@ -156,12 +156,18 @@ async function deriveLinksFromHTML(
     );
   }
 
+  const rate = config.INDEXER_TRAFFIC_SHARE
+    ? Math.max(0, Math.min(1, Number(config.INDEXER_TRAFFIC_SHARE)))
+    : 0;
+
+  const shouldForwardTraffic =
+    rate > 0 && Math.random() <= rate && !!config.INDEXER_RABBITMQ_URL;
+
   const forwardToIndexer =
     !!meta.internalOptions.teamId &&
     !meta.internalOptions.teamId?.includes("robots-txt") &&
     !meta.internalOptions.teamId?.includes("sitemap") &&
-    // for now, only precrawl team has this enabled
-    meta.internalOptions.teamId === config.PRECRAWL_TEAM_ID;
+    shouldForwardTraffic;
 
   const requiresLinks = !!hasFormatOfType(meta.options.formats, "links");
 
