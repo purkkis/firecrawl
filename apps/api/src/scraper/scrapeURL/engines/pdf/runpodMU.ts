@@ -16,12 +16,15 @@ export async function scrapePDFWithRunPodMU(
   base64Content: string,
   maxPages?: number,
   pagesProcessed?: number,
+  pages?: number[],
 ): Promise<PDFProcessorResult> {
   meta.logger.debug("Processing PDF document with RunPod MU", {
     tempFilePath,
+    pages,
   });
 
-  if (!maxPages) {
+  // Skip cache when processing a subset of pages (would not match full-PDF cache entries)
+  if (!maxPages && !pages) {
     try {
       const cachedResult = await getPdfResultFromCache(base64Content);
       if (cachedResult) {
@@ -115,6 +118,7 @@ export async function scrapePDFWithRunPodMU(
         timeout: meta.abort.scrapeTimeout(),
         created_at: Date.now(),
         ...(maxPages !== undefined && { max_pages: maxPages }),
+        ...(pages !== undefined && { pages, parse_method: "ocr" }),
       },
     },
     logger: meta.logger.child({

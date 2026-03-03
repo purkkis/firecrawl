@@ -20,7 +20,11 @@ import {
   getPDFMode,
 } from "../../../../controllers/v2/types";
 import type { PDFMode } from "../../../../controllers/v2/types";
-import { processPdf, detectPdf } from "@mendable/firecrawl-rs";
+import {
+  processPdf,
+  detectPdf,
+  processPdfWithPageMarkers,
+} from "@mendable/firecrawl-rs";
 import { MAX_FILE_SIZE, MILLISECONDS_PER_PAGE } from "./types";
 import type { PDFProcessorResult } from "./types";
 import { scrapePDFWithRunPodMU } from "./runpodMU";
@@ -28,6 +32,11 @@ import { scrapePDFWithParsePDF } from "./pdfParse";
 import { captureExceptionWithZdrCheck } from "../../../../services/sentry";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
 import { comparePdfOutputs } from "./shadowComparison";
+import {
+  splitByPageMarkers,
+  mapOcrResultToPages,
+  mergePageMarkdown,
+} from "./mergePageMarkdown";
 
 /** Check if the PDF is eligible for Rust extraction, returning a rejection reason or null. */
 function getIneligibleReason(
@@ -142,6 +151,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     let effectivePageCount: number = 0;
     let metadataTitle: string | undefined;
     let rustMarkdownForShadow: string | undefined;
+    let pagesNeedingOcr: number[] = [];
+    let detectedPdfType: string | undefined;
 
     const rustEnabled = !!config.PDF_RUST_EXTRACT_ENABLE;
     const logger = meta.logger.child({ method: "scrapePDF/processPdf" });
@@ -204,6 +215,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           ? Math.min(pdfResult.pageCount, maxPages)
           : pdfResult.pageCount;
         metadataTitle = pdfResult.title ?? undefined;
+        pagesNeedingOcr = pdfResult.pagesNeedingOcr;
+        detectedPdfType = pdfResult.pdfType;
 
         const ineligibleReason = getIneligibleReason(pdfResult);
         const eligible = !ineligibleReason;
@@ -258,6 +271,133 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       }
     }
 
+    // Page-level routing: for Mixed PDFs, use Rust for text pages and
+    // MinerU only for pages that need OCR, then merge results.
+    if (
+      !result &&
+      config.PDF_PAGE_ROUTING_ENABLE &&
+      rustEnabled &&
+      detectedPdfType === "Mixed" &&
+      pagesNeedingOcr.length > 0 &&
+      pagesNeedingOcr.length < effectivePageCount &&
+      mode !== "fast"
+    ) {
+      const pageRoutingLogger = meta.logger.child({
+        method: "scrapePDF/pageRouting",
+      });
+      try {
+        // 1. Compute text pages (all pages NOT needing OCR)
+        const ocrSet = new Set(pagesNeedingOcr);
+        const textPages: number[] = [];
+        for (let p = 1; p <= effectivePageCount; p++) {
+          if (!ocrSet.has(p)) textPages.push(p);
+        }
+
+        pageRoutingLogger.info("Page-level routing activated", {
+          url: meta.rewrittenUrl ?? meta.url,
+          totalPages: effectivePageCount,
+          textPages: textPages.length,
+          ocrPages: pagesNeedingOcr.length,
+          pagesNeedingOcr,
+        });
+
+        // 2. Get Rust markdown with page markers for text pages only
+        const rustStartedAt = Date.now();
+        const rustResult = processPdfWithPageMarkers(tempFilePath, textPages);
+        const rustDurationMs = Date.now() - rustStartedAt;
+        pageRoutingLogger.info("Rust text page extraction completed", {
+          durationMs: rustDurationMs,
+          markdownLength: rustResult.markdown?.length ?? 0,
+        });
+
+        if (rustResult.markdown) {
+          // 3. Split Rust markdown into per-page map
+          const rustPageMap = splitByPageMarkers(rustResult.markdown);
+
+          // 4. Send full PDF + pages param to MinerU (only OCR pages processed)
+          const base64Content = (await readFile(tempFilePath)).toString(
+            "base64",
+          );
+
+          if (
+            base64Content.length < MAX_FILE_SIZE &&
+            config.RUNPOD_MU_API_KEY &&
+            config.RUNPOD_MU_POD_ID
+          ) {
+            const ocrStartedAt = Date.now();
+            const ocrResult = await scrapePDFWithRunPodMU(
+              {
+                ...meta,
+                logger: meta.logger.child({
+                  method: "scrapePDF/pageRouting/scrapePDFWithRunPodMU",
+                }),
+              },
+              tempFilePath,
+              base64Content,
+              maxPages,
+              pagesNeedingOcr.length,
+              pagesNeedingOcr,
+            );
+            const ocrDurationMs = Date.now() - ocrStartedAt;
+            pageRoutingLogger.info("MinerU OCR page extraction completed", {
+              durationMs: ocrDurationMs,
+              markdownLength: ocrResult.markdown?.length ?? 0,
+              ocrPages: pagesNeedingOcr.length,
+            });
+
+            if (ocrResult.markdown) {
+              // 5. Map MinerU result to original OCR page numbers
+              const ocrPageMap = mapOcrResultToPages(
+                ocrResult.markdown,
+                pagesNeedingOcr,
+              );
+
+              // 6. Merge both maps into final ordered markdown
+              const mergedMarkdown = mergePageMarkdown(
+                rustPageMap,
+                ocrPageMap,
+                effectivePageCount,
+              );
+
+              const html = await marked.parse(mergedMarkdown, { async: true });
+              result = { markdown: mergedMarkdown, html };
+
+              pageRoutingLogger.info("Page-level routing merge completed", {
+                url: meta.rewrittenUrl ?? meta.url,
+                totalPages: effectivePageCount,
+                rustPages: rustPageMap.size,
+                ocrMappedPages: ocrPageMap.size,
+                mergedLength: mergedMarkdown.length,
+              });
+            }
+          }
+        }
+      } catch (error) {
+        // 7. Any failure leaves result = null, falls through to full-PDF MinerU
+        if (
+          error instanceof RemoveFeatureError ||
+          error instanceof AbortManagerThrownError
+        ) {
+          throw error;
+        }
+        pageRoutingLogger.warn(
+          "Page-level routing failed, falling back to full-PDF MinerU",
+          {
+            error,
+            url: meta.rewrittenUrl ?? meta.url,
+          },
+        );
+        captureExceptionWithZdrCheck(error, {
+          extra: {
+            zeroDataRetention: meta.internalOptions.zeroDataRetention ?? false,
+            scrapeId: meta.id,
+            teamId: meta.internalOptions.teamId,
+            url: meta.rewrittenUrl ?? meta.url,
+          },
+        });
+      }
+    }
+
     // Only enforce the per-page time budget when we need MU/fallback.
     // Rust extraction is fast enough that the constraint doesn't apply.
     if (
@@ -307,10 +447,16 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
               success: true,
             });
 
-          if (rustMarkdownForShadow && result?.markdown && config.PDF_SHADOW_COMPARISON_ENABLE) {
+          if (
+            rustMarkdownForShadow &&
+            result?.markdown &&
+            config.PDF_SHADOW_COMPARISON_ENABLE
+          ) {
             const shadowRust = rustMarkdownForShadow;
             const shadowMu = result.markdown;
-            const shadowLogger = meta.logger.child({ method: "scrapePDF/shadowComparison" });
+            const shadowLogger = meta.logger.child({
+              method: "scrapePDF/shadowComparison",
+            });
             const isZdr = !!meta.internalOptions.zeroDataRetention;
 
             (async () => {

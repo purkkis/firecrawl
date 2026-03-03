@@ -1,7 +1,7 @@
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use pdf_inspector::{
-  PdfOptions, PdfType,
+  MarkdownOptions, PdfOptions, PdfType,
   process_pdf_with_options as rust_process_pdf,
 };
 
@@ -46,6 +46,32 @@ pub fn process_pdf(path: String) -> Result<PdfProcessResult> {
     Error::new(
       Status::GenericFailure,
       format!("Failed to process PDF: {e}"),
+    )
+  })?;
+
+  Ok(to_napi_result(result))
+}
+
+/// Process a PDF with page markers (<!-- Page N -->) inserted between pages.
+/// Optionally filters to only the specified 1-indexed text pages.
+#[napi]
+pub fn process_pdf_with_page_markers(
+  path: String,
+  text_pages: Option<Vec<i32>>,
+) -> Result<PdfProcessResult> {
+  let mut options = PdfOptions::new().markdown(MarkdownOptions {
+    include_page_numbers: true,
+    ..Default::default()
+  });
+
+  if let Some(pages) = text_pages {
+    options = options.pages(pages.into_iter().map(|p| p as u32));
+  }
+
+  let result = rust_process_pdf(&path, options).map_err(|e| {
+    Error::new(
+      Status::GenericFailure,
+      format!("Failed to process PDF with page markers: {e}"),
     )
   })?;
 
