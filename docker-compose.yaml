@@ -11,7 +11,7 @@ x-common-service: &common-service
       soft: 65535
       hard: 65535
   networks:
-    - backend
+    - firecrawl-backend
   extra_hosts:
     - "host.docker.internal:host-gateway"
   logging:
@@ -38,8 +38,8 @@ x-common-env: &common-env
   OPENAI_API_KEY: ${OPENAI_API_KEY}
   OPENAI_BASE_URL: ${OPENAI_BASE_URL}
   MODEL_NAME: ${MODEL_NAME}
-  MODEL_EMBEDDING_NAME: ${MODEL_EMBEDDING_NAME} 
-  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL} 
+  MODEL_EMBEDDING_NAME: ${MODEL_EMBEDDING_NAME}
+  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
   SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
   BULL_AUTH_KEY: ${BULL_AUTH_KEY}
   TEST_API_KEY: ${TEST_API_KEY}
@@ -70,7 +70,7 @@ services:
       # Configure maximum concurrent pages for Playwright browser instances
       MAX_CONCURRENT_PAGES: ${CRAWL_CONCURRENT_REQUESTS:-10}
     networks:
-      - backend
+      - firecrawl-backend
     # Resource limits for Docker Compose (not Swarm)
     cpus: 2.0
     mem_limit: 4G
@@ -83,6 +83,7 @@ services:
         compress: "true"
     tmpfs:
       - /tmp/.cache:noexec,nosuid,size=1g
+    restart: unless-stopped
 
   api:
     <<: *common-service
@@ -109,6 +110,7 @@ services:
     cpus: 4.0
     mem_limit: 8G
     memswap_limit: 8G
+    restart: unless-stopped
 
   redis:
     # NOTE: If you want to use Valkey (open source) instead of Redis (source available),
@@ -118,7 +120,7 @@ services:
     # image: valkey/valkey:alpine
 
     networks:
-      - backend
+      - firecrawl-backend
     command: redis-server --bind 0.0.0.0
     logging:
       driver: "json-file"
@@ -126,11 +128,12 @@ services:
         max-size: "5m"
         max-file: "2"
         compress: "true"
-    
+    restart: unless-stopped
+
   rabbitmq:
     image: rabbitmq:3-management
     networks:
-      - backend
+      - firecrawl-backend
     command: rabbitmq-server
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
@@ -144,7 +147,8 @@ services:
         max-size: "5m"
         max-file: "2"
         compress: "true"
-  
+    restart: unless-stopped
+
   nuq-postgres:
     build: apps/nuq-postgres
     environment:
@@ -152,14 +156,15 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-postgres}
     networks:
-      - backend
+      - firecrawl-backend
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
         compress: "true"
+    restart: unless-stopped
 
 networks:
-  backend:
+  firecrawl-backend:
     driver: bridge
