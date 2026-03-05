@@ -229,9 +229,7 @@ export async function integCreateUserController(req: Request, res: Response) {
           .single();
         if (newOrgError) {
           logger.error("Failed to create organization", { error: newOrgError });
-          return res
-            .status(500)
-            .json({ error: "Failed to create organization" });
+          return res.status(500).json({ error: "Failed to create organization" });
         }
 
         // create a new team with this referrer, linked to the org
@@ -256,11 +254,7 @@ export async function integCreateUserController(req: Request, res: Response) {
           .update({ name: teamId })
           .eq("id", newOrg.id);
         if (orgNameError) {
-          logger.warn("Failed to update org name to team ID", {
-            error: orgNameError,
-            orgId: newOrg.id,
-            teamId,
-          });
+          logger.warn("Failed to update org name to team ID", { error: orgNameError, orgId: newOrg.id, teamId });
         }
 
         // Link team to org in join table
@@ -271,12 +265,8 @@ export async function integCreateUserController(req: Request, res: Response) {
             team_id: teamId,
           });
         if (orgLinkError) {
-          logger.error("Failed to link team to organization", {
-            error: orgLinkError,
-          });
-          return res
-            .status(500)
-            .json({ error: "Failed to link team to organization" });
+          logger.error("Failed to link team to organization", { error: orgLinkError });
+          return res.status(500).json({ error: "Failed to link team to organization" });
         }
 
         const { error: newUserTeamError } = await supabase_service
