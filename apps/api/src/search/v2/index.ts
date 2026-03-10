@@ -13,7 +13,7 @@ export async function search({
   tbs = undefined,
   filter = undefined,
   lang = "en",
-  country = "us",
+  country,
   location = undefined,
   proxy = undefined,
   sleep_interval = 0,

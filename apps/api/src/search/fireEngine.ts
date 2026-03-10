@@ -35,6 +35,7 @@ export async function fire_engine_search(
     country: options.country,
     location: options.location,
     tbs: options.tbs,
+    filter: options.filter,
     numResults: options.numResults,
     page: options.page ?? 1,
   };
@@ -77,6 +78,7 @@ export async function fireEngineMap(
     country: options.country,
     location: options.location,
     tbs: options.tbs,
+    filter: options.filter,
     numResults: options.numResults,
     page: options.page ?? 1,
   };
